@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>লগইন — ব্র্যাক ভয়েস সহকারী</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/static/admin.css" />
+<script>
+  (function () {
+    var t = localStorage.getItem('brac-theme') === 'light' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
+</head>
+<body class="login-body">
+
+<form class="login-card" id="loginForm" autocomplete="off">
+  <div class="login-mark">
+    <span class="mark-dot" aria-hidden="true"></span>
+    <span>ব্র্যাক ভয়েস সহকারী</span>
+  </div>
+  <p class="login-sub">চালিয়ে যেতে লগইন করুন</p>
+
+  <label class="field">
+    <span>ইউজারনেম</span>
+    <input type="text" id="username" name="username" required autocomplete="username" />
+  </label>
+
+  <label class="field">
+    <span>পাসওয়ার্ড</span>
+    <input type="password" id="password" name="password" required autocomplete="current-password" />
+  </label>
+
+  <div class="login-error" id="loginError"></div>
+
+  <button type="submit" class="login-btn" id="loginBtn">প্রবেশ করুন</button>
+
+  <a class="back-link" href="/register">নতুন অ্যাকাউন্ট তৈরি করুন →</a>
+</form>
+
+<script>
+const form = document.getElementById('loginForm');
+const errorBox = document.getElementById('loginError');
+const btn = document.getElementById('loginBtn');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  errorBox.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'যাচাই করা হচ্ছে…';
+
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: document.getElementById('username').value.trim(),
+        password: document.getElementById('password').value,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'লগইন ব্যর্থ');
+    window.location.replace('/');
+  } catch (err) {
+    errorBox.textContent = err.message;
+    btn.disabled = false;
+    btn.textContent = 'প্রবেশ করুন';
+  }
+});
+</script>
+
+</body>
+</html>

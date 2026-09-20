@@ -1,0 +1,11 @@
+{
+  "voice": "Kore",
+  "echo_guard_default": true,
+  "show_transcription": true,
+  "show_only_assistant": true,
+  "show_retrieval_logs": false,
+  "min_score": 0.15,
+  "rag_top_k": 4,
+  "orb_speed": "normal",
+  "font_size": "normal"
+}

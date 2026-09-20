@@ -1,0 +1,548 @@
+:root {
+  --magenta: #E6007E;
+  --magenta-lit: #FF4FA8;
+  --magenta-deep: #8A0050;
+}
+
+/* ---------------- dark theme (default, unchanged from before) ---------------- */
+:root, [data-theme="dark"] {
+  --ink: #FDF6FA;
+  --muted: #B08AA0;
+  --base: #100309;
+  --base-2: #1A0710;
+  --edge: rgba(230, 0, 126, 0.22);
+  --panel-bg-1: rgba(26, 7, 16, 0.6);
+  --panel-bg-2: rgba(16, 3, 9, 0.85);
+  --face-bg-1: #2A0B1A;
+  --face-bg-2: #170510;
+  --face-bg-1-active: #400F26;
+  --face-bg-2-active: #240816;
+  --msg-user-bg: rgba(255, 255, 255, 0.055);
+  --msg-user-border: rgba(255, 255, 255, 0.07);
+  --scrim: rgba(0, 0, 0, 0.5);
+}
+
+/* ---------------- light theme: page background swaps to cream ---------------- */
+/* Everything else (magenta accents, orb colors, layout) is untouched — only
+   the background surfaces and the text/border tones needed to stay legible
+   against a light page are adjusted. */
+[data-theme="light"] {
+  --ink: #2B1420;
+  --muted: #8A6A78;
+  --base: #FBF6EC;
+  --base-2: #F3EBDB;
+  --edge: rgba(230, 0, 126, 0.18);
+  --panel-bg-1: rgba(255, 255, 255, 0.75);
+  --panel-bg-2: rgba(251, 246, 236, 0.92);
+  --face-bg-1: #FFFFFF;
+  --face-bg-2: #FDEFF6;
+  --face-bg-1-active: #FBDCEC;
+  --face-bg-2-active: #F7C6E1;
+  --msg-user-bg: rgba(43, 20, 32, 0.04);
+  --msg-user-border: rgba(43, 20, 32, 0.08);
+  --scrim: rgba(43, 20, 32, 0.25);
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; margin: 0; overflow-x: hidden; }
+
+body {
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(230, 0, 126, 0.20), transparent 60%),
+    radial-gradient(90% 70% at 50% 115%, rgba(138, 0, 80, 0.28), transparent 65%),
+    var(--base);
+  color: var(--ink);
+  font-family: "Hind Siliguri", "Noto Sans Bengali", system-ui, sans-serif;
+  font-weight: 400;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  grid-template-columns: 1fr minmax(280px, 24rem);
+  grid-template-areas:
+    "head head"
+    "stage panel";
+  overflow: hidden;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+[data-theme="light"] body {
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(230, 0, 126, 0.09), transparent 60%),
+    radial-gradient(90% 70% at 50% 115%, rgba(138, 0, 80, 0.07), transparent 65%),
+    var(--base);
+}
+
+.grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  z-index: 5;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 3px 3px;
+  mix-blend-mode: overlay;
+}
+[data-theme="light"] .grain { opacity: 0.25; mix-blend-mode: multiply; }
+
+/* ---------------- masthead ---------------- */
+.masthead {
+  grid-area: head;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.15rem 1.6rem;
+  border-bottom: 1px solid var(--edge);
+}
+
+.mark { display: flex; align-items: center; gap: 0.7rem; }
+
+.mark-dot {
+  width: 0.7rem; height: 0.7rem;
+  border-radius: 50%;
+  background: var(--magenta);
+  box-shadow: 0 0 0 4px rgba(230, 0, 126, 0.16), 0 0 18px var(--magenta);
+}
+
+.mark-text { font-weight: 600; font-size: 1.05rem; letter-spacing: 0.01em; }
+
+.head-controls { display: flex; align-items: center; gap: 0.9rem; }
+
+.kb-strip {
+  display: flex; align-items: baseline; gap: 0.55rem;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+.kb-value { color: var(--ink); font-weight: 500; }
+
+/* theme toggle switch */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0.2rem;
+}
+.theme-toggle .icon-sun, .theme-toggle .icon-moon {
+  width: 15px; height: 15px;
+  display: inline-block;
+  position: relative;
+}
+.icon-sun::before {
+  content: "";
+  position: absolute; inset: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow:
+    0 -7px 0 -5px currentColor, 0 7px 0 -5px currentColor,
+    -7px 0 0 -5px currentColor, 7px 0 0 -5px currentColor,
+    -5px -5px 0 -5px currentColor, 5px 5px 0 -5px currentColor,
+    -5px 5px 0 -5px currentColor, 5px -5px 0 -5px currentColor;
+}
+.icon-moon::before {
+  content: "";
+  position: absolute; inset: 1px;
+  border-radius: 50%;
+  box-shadow: 4px -1px 0 0 currentColor;
+  background: transparent;
+}
+.theme-track {
+  width: 2.3rem; height: 1.15rem;
+  border-radius: 999px;
+  border: 1px solid var(--edge);
+  background: rgba(255, 255, 255, 0.05);
+  position: relative;
+  transition: background 0.2s;
+}
+[data-theme="light"] .theme-track { background: rgba(43, 20, 32, 0.06); }
+.theme-thumb {
+  position: absolute;
+  top: 50%; left: 0.16rem;
+  width: 0.83rem; height: 0.83rem;
+  border-radius: 50%;
+  background: var(--magenta);
+  transform: translateY(-50%);
+  transition: left 0.2s;
+}
+[data-theme="light"] .theme-thumb { left: 1.28rem; }
+
+.settings-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem; height: 2.1rem;
+  border-radius: 50%;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.18s, background 0.18s;
+}
+.settings-btn:hover { color: var(--ink); background: rgba(230, 0, 126, 0.1); }
+
+.clear, .panel-close {
+  background: none;
+  border: 1px solid var(--edge);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 0.16rem 0.72rem;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: color 0.18s, border-color 0.18s;
+}
+.clear:hover, .panel-close:hover { color: var(--ink); border-color: var(--magenta); }
+.panel-close {
+  display: none;
+  width: 1.9rem; height: 1.9rem;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+}
+
+/* ---------------- stage ---------------- */
+.stage {
+  grid-area: stage;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.4rem;
+  padding: 1rem 2rem 2.4rem;
+  min-height: 0;
+}
+
+.orb-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 0;
+}
+
+#orb {
+  width: min(46vh, 30rem);
+  height: min(46vh, 30rem);
+  display: block;
+}
+
+.state-line {
+  margin: 0.2rem 0 0;
+  font-size: 0.98rem;
+  color: var(--muted);
+  min-height: 1.4em;
+  letter-spacing: 0.01em;
+}
+
+/* ---------------- talk button (static — no spinning ring) ---------------- */
+.talk {
+  position: relative;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 999px;
+}
+
+.talk-face {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.95rem 2.1rem;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--face-bg-1), var(--face-bg-2));
+  color: var(--ink);
+  font-size: 1.06rem;
+  font-weight: 600;
+  box-shadow: 0 14px 40px rgba(230, 0, 126, 0.28), 0 0 0 1px var(--edge);
+  transition: transform 0.16s ease, box-shadow 0.22s ease;
+}
+
+.talk:hover .talk-face { transform: translateY(-1px); box-shadow: 0 18px 48px rgba(230, 0, 126, 0.42), 0 0 0 1px var(--edge); }
+.talk:active .talk-face { transform: translateY(1px); }
+.talk:focus-visible { outline: 2px solid var(--magenta-lit); outline-offset: 5px; }
+
+.talk-icon { width: 1.25rem; height: 1.25rem; flex: none; }
+.ico-mic { fill: none; stroke: var(--magenta-lit); stroke-width: 1.7; stroke-linecap: round; }
+.ico-stop { fill: var(--magenta-lit); display: none; }
+
+.talk[aria-pressed="true"] .ico-mic { display: none; }
+.talk[aria-pressed="true"] .ico-stop { display: block; }
+.talk[aria-pressed="true"] .talk-face { background: linear-gradient(180deg, var(--face-bg-1-active), var(--face-bg-2-active)); }
+.talk[disabled] { opacity: 0.55; cursor: wait; }
+
+/* ---------------- echo guard ---------------- */
+.guard {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.guard input { position: absolute; opacity: 0; width: 0; height: 0; }
+.guard-box {
+  width: 2.1rem; height: 1.1rem;
+  border-radius: 999px;
+  border: 1px solid var(--edge);
+  background: rgba(255, 255, 255, 0.05);
+  position: relative;
+  transition: background 0.2s, border-color 0.2s;
+}
+[data-theme="light"] .guard-box { background: rgba(43, 20, 32, 0.05); }
+.guard-box::after {
+  content: "";
+  position: absolute;
+  top: 50%; left: 0.18rem;
+  width: 0.72rem; height: 0.72rem;
+  border-radius: 50%;
+  background: var(--muted);
+  transform: translateY(-50%);
+  transition: left 0.2s, background 0.2s;
+}
+.guard input:checked + .guard-box { background: rgba(230, 0, 126, 0.28); border-color: var(--magenta); }
+.guard input:checked + .guard-box::after { left: 1.14rem; background: var(--magenta-lit); }
+.guard input:focus-visible + .guard-box { outline: 2px solid var(--magenta-lit); outline-offset: 3px; }
+
+/* ---------------- text input ---------------- */
+.text-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 26rem;
+}
+.text-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.92rem;
+  color: var(--ink);
+  background: var(--face-bg-2);
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  padding: 0.65rem 1.1rem;
+  outline: none;
+  transition: border-color 0.16s;
+}
+.text-input::placeholder { color: var(--muted); }
+.text-input:focus { border-color: var(--magenta); }
+
+.text-send {
+  flex: none;
+  width: 2.6rem; height: 2.6rem;
+  border-radius: 50%;
+  border: 0;
+  background: linear-gradient(180deg, var(--face-bg-1), var(--face-bg-2));
+  box-shadow: 0 0 0 1px var(--edge);
+  color: var(--magenta-lit);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.12s, box-shadow 0.18s;
+}
+.text-send:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(230,0,126,0.25), 0 0 0 1px var(--edge); }
+.text-send:active { transform: translateY(1px); }
+.text-send:disabled { opacity: 0.55; cursor: wait; }
+
+/* ---------------- transcript panel (desktop: fixed side panel) ---------------- */
+.panel {
+  grid-area: panel;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--edge);
+  background: linear-gradient(180deg, var(--panel-bg-1), var(--panel-bg-2));
+  backdrop-filter: blur(6px);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem 1.25rem 0.8rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.panel-head-actions { display: flex; align-items: center; gap: 0.5rem; }
+
+.log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.4rem 1.25rem 1.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--magenta-deep) transparent;
+  font-size: var(--transcript-size, 0.95rem);
+}
+.log::-webkit-scrollbar { width: 6px; }
+.log::-webkit-scrollbar-thumb { background: var(--magenta-deep); border-radius: 3px; }
+
+.empty { color: var(--muted); opacity: 0.7; font-size: 0.88rem; line-height: 1.7; margin: 0; }
+
+.msg {
+  font-size: 1em;
+  line-height: 1.72;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.9rem;
+  max-width: 100%;
+  word-wrap: break-word;
+}
+.msg .who { display: block; font-size: 0.74rem; color: var(--muted); margin-bottom: 0.15rem; }
+.msg.user { background: var(--msg-user-bg); border: 1px solid var(--msg-user-border); }
+.msg.bot { background: rgba(230, 0, 126, 0.11); border: 1px solid rgba(230, 0, 126, 0.28); }
+.msg.live { opacity: 0.72; }
+
+.cite {
+  font-size: 0.8em;
+  color: var(--muted);
+  border-left: 2px solid var(--magenta);
+  padding: 0.15rem 0 0.15rem 0.7rem;
+  line-height: 1.6;
+}
+.cite b { color: var(--ink); font-weight: 500; }
+.cite.none { border-left-color: var(--edge); }
+
+.note {
+  font-size: 0.82em;
+  color: #FF8FB8;
+  background: rgba(230, 0, 126, 0.1);
+  border-radius: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  line-height: 1.6;
+}
+[data-theme="light"] .note { color: var(--magenta-deep); }
+
+/* ---------------- mobile feed peek + bottom sheet ---------------- */
+.feed-peek { display: none; }
+.panel-scrim { display: none; }
+
+/* ---------------- responsive: mobile layout ---------------- */
+@media (max-width: 860px) {
+  body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas: "head" "peek" "stage";
+    overflow: hidden;
+    height: 100dvh;
+  }
+
+  .masthead { padding: 0.9rem 1.1rem; }
+  .mark-text { font-size: 0.95rem; }
+  .kb-strip { display: none; } /* redundant with settings page on small screens */
+
+  .stage {
+    padding: 0.5rem 1.2rem 1rem;
+    gap: 1rem;
+    overflow-y: auto;
+  }
+
+  #orb { width: min(58vw, 17rem); height: min(58vw, 17rem); }
+
+  /* Peek bar: shows the latest turn right below the header, tap to open
+     the full conversation. It's part of the normal grid flow now (not a
+     floating fixed overlay), so it always sits directly under the header
+     regardless of header height. */
+  .feed-peek {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.15rem;
+    grid-area: peek;
+    position: relative;
+    min-width: 0;   /* without this, a long reply's unwrapped text forces
+                       this box (and the grid column, and the page) wider
+                       than the screen — nowrap+ellipsis below can't help
+                       until the box itself is allowed to shrink first */
+    width: 100%;
+    margin: 0.6rem 0.8rem 0;
+    z-index: 20;
+    background: linear-gradient(180deg, var(--panel-bg-1), var(--panel-bg-2));
+    border: 1px solid var(--edge);
+    border-radius: 1rem;
+    padding: 0.6rem 0.9rem 0.7rem;
+    text-align: left;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+  }
+  .feed-peek-who {
+    min-width: 0;
+    max-width: 100%;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .feed-peek-text {
+    display: block;
+    min-width: 0;   /* see note on .feed-peek above — same fix, same reason */
+    max-width: 100%;
+    width: 100%;
+    font-size: 0.88rem;
+    line-height: 1.35;
+    color: var(--ink);
+    overflow: hidden;
+    max-height: 6.75em;   /* ~5 lines at this line-height */
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+  .feed-peek-chevron {
+    position: absolute;
+    top: 0.55rem; right: 0.8rem;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  /* Panel becomes a full-height sheet that drops down from the top,
+     matching the peek bar it expands from — hidden until opened. */
+  .panel {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    border-left: 0;
+    border-radius: 0;
+    transform: translateY(-100%);
+    transition: transform 0.28s ease;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .panel.open { transform: translateY(0); }
+
+  .panel-head { padding: max(1rem, env(safe-area-inset-top, 0px)) 1.1rem 0.8rem; }
+  .panel-close { display: flex; }
+
+  .log { padding: 0.4rem 1.1rem 1.4rem; }
+
+  .panel-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    background: var(--scrim);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.28s ease;
+  }
+  .panel-scrim.open { opacity: 1; pointer-events: auto; }
+
+  .talk-face { padding: 0.85rem 1.7rem; font-size: 1rem; }
+  .guard { font-size: 0.8rem; text-align: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .talk-face { transition: none; }
+  .panel { transition: none; }
+  .panel-scrim { transition: none; }
+}

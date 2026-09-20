@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>অ্যাডমিন লগইন — ব্র্যাক</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/static/admin.css" />
+<script>
+  // Apply the saved theme before paint so the login page matches whatever
+  // the operator last chose in the admin panel (shared 'brac-theme' key).
+  (function () {
+    var t = localStorage.getItem('brac-theme') === 'light' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
+</head>
+<body class="login-body">
+
+<form class="login-card" id="loginForm" autocomplete="off">
+  <div class="login-mark">
+    <span class="mark-dot" aria-hidden="true"></span>
+    <span data-i18n="loginBrand">ব্র্যাক অ্যাডমিন প্যানেল</span>
+  </div>
+  <p class="login-sub" data-i18n="loginSub">ভয়েস সহকারীর সেটিংস পরিবর্তন করতে লগইন করুন</p>
+
+  <label class="field">
+    <span data-i18n="usernameLabel">ইউজারনেম</span>
+    <input type="text" id="username" name="username" required autocomplete="username" />
+  </label>
+
+  <label class="field">
+    <span data-i18n="passwordLabel">পাসওয়ার্ড</span>
+    <input type="password" id="password" name="password" required autocomplete="current-password" />
+  </label>
+
+  <div class="login-error" id="loginError"></div>
+
+  <button type="submit" class="login-btn" id="loginBtn" data-i18n="loginBtn">প্রবেশ করুন</button>
+
+  <a class="back-link" href="/" data-i18n="backLink">← ভয়েস সহকারীতে ফিরে যান</a>
+</form>
+
+<script>
+const LOGIN_I18N = {
+  bn: {
+    loginBrand: 'ব্র্যাক অ্যাডমিন প্যানেল',
+    loginSub: 'ভয়েস সহকারীর সেটিংস পরিবর্তন করতে লগইন করুন',
+    usernameLabel: 'ইউজারনেম',
+    passwordLabel: 'পাসওয়ার্ড',
+    loginBtn: 'প্রবেশ করুন',
+    loginBtnBusy: 'যাচাই করা হচ্ছে…',
+    backLink: '← ভয়েস সহকারীতে ফিরে যান',
+    loginFailed: 'লগইন ব্যর্থ',
+  },
+  en: {
+    loginBrand: 'BRAC Admin Panel',
+    loginSub: 'Log in to change the voice assistant settings',
+    usernameLabel: 'Username',
+    passwordLabel: 'Password',
+    loginBtn: 'Log in',
+    loginBtnBusy: 'Checking…',
+    backLink: '← Back to voice assistant',
+    loginFailed: 'Login failed',
+  },
+};
+
+const savedLang = localStorage.getItem('brac-admin-lang') === 'en' ? 'en' : 'bn';
+document.documentElement.lang = savedLang;
+document.querySelectorAll('[data-i18n]').forEach((el) => {
+  const key = el.dataset.i18n;
+  if (LOGIN_I18N[savedLang][key]) el.textContent = LOGIN_I18N[savedLang][key];
+});
+
+const form = document.getElementById('loginForm');
+const errorBox = document.getElementById('loginError');
+const btn = document.getElementById('loginBtn');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  errorBox.textContent = '';
+  btn.disabled = true;
+  btn.textContent = LOGIN_I18N[savedLang].loginBtnBusy;
+
+  try {
+    const res = await fetch('/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: document.getElementById('username').value,
+        password: document.getElementById('password').value,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const raw = data.error || LOGIN_I18N[savedLang].loginFailed;
+      const known = raw === 'ভুল ইউজারনেম অথবা পাসওয়ার্ড';
+      throw new Error(known && savedLang === 'en' ? 'Incorrect username or password' : raw);
+    }
+    window.location.href = '/admin';
+  } catch (err) {
+    errorBox.textContent = err.message;
+    btn.disabled = false;
+    btn.textContent = LOGIN_I18N[savedLang].loginBtn;
+  }
+});
+</script>
+
+</body>
+</html>

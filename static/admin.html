@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>অ্যাডমিন প্যানেল — ব্র্যাক ভয়েস সহকারী</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/static/admin.css" />
+</head>
+<body>
+
+<header class="admin-head">
+  <div class="login-mark">
+    <span class="mark-dot" aria-hidden="true"></span>
+    <span data-i18n="panelTitle">অ্যাডমিন প্যানেল</span>
+  </div>
+  <div class="admin-head-actions">
+    <div class="lang-toggle" role="group" aria-label="Language">
+      <button type="button" id="langBn" data-lang="bn">বাং</button>
+      <button type="button" id="langEn" data-lang="en">EN</button>
+    </div>
+
+    <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle theme">
+      <span class="theme-track"><span class="theme-thumb"></span></span>
+    </button>
+
+    <a href="/" class="ghost-btn" data-i18n="backToVoice">← ভয়েস সহকারী</a>
+    <a href="#" class="ghost-btn" id="uploadLink" target="_blank" rel="noopener" data-i18n="uploadDocs">নথি আপলোড</a>
+    <button class="ghost-btn" id="logoutBtn" type="button" data-i18n="logout">লগআউট</button>
+  </div>
+</header>
+
+<main class="admin-main">
+
+  <div class="save-banner" id="saveBanner"></div>
+
+  <!-- Voice -->
+  <section class="card">
+    <h2 data-i18n="voiceTitle">ভয়েস</h2>
+    <div class="field-row">
+      <label class="field">
+        <span data-i18n="voicePreset">ভয়েস প্রিসেট</span>
+        <select id="voice"></select>
+      </label>
+    </div>
+    <p class="hint" data-i18n="voiceHint">পরিবর্তন পরবর্তী সেশন থেকে কার্যকর হবে — চলমান কথোপকথনে প্রভাব ফেলবে না।</p>
+  </section>
+
+  <!-- Behavior -->
+  <section class="card">
+    <h2 data-i18n="behaviorTitle">আচরণ</h2>
+    <label class="switch-row">
+      <span data-i18n="echoGuardLabel">সহকারী বলার সময় মাইক বন্ধ (ডিফল্ট)</span>
+      <span class="switch"><input type="checkbox" id="echo_guard_default" /><span class="switch-track"></span></span>
+    </label>
+    <label class="switch-row">
+      <span data-i18n="showTranscriptionLabel">কথোপকথনের লিখিত রূপ দেখান</span>
+      <span class="switch"><input type="checkbox" id="show_transcription" /><span class="switch-track"></span></span>
+    </label>
+    <label class="switch-row">
+      <span data-i18n="showOnlyAssistantLabel">শুধু সহকারীর কথা দেখান (ব্যবহারকারীর নয়)</span>
+      <span class="switch"><input type="checkbox" id="show_only_assistant" /><span class="switch-track"></span></span>
+    </label>
+    <label class="switch-row">
+      <span data-i18n="showRetrievalLogsLabel">নথি অনুসন্ধানের লগ দেখান</span>
+      <span class="switch"><input type="checkbox" id="show_retrieval_logs" /><span class="switch-track"></span></span>
+    </label>
+  </section>
+
+  <!-- Retrieval -->
+  <section class="card">
+    <h2 data-i18n="retrievalTitle">তথ্য অনুসন্ধান (RAG)</h2>
+    <div class="field">
+      <span><span data-i18n="minScoreLabel">ন্যূনতম মিল স্কোর:</span> <b id="minScoreValue">0.15</b></span>
+      <input type="range" id="min_score" min="0.10" max="0.30" step="0.01" />
+      <p class="hint" data-i18n="minScoreHint">বেশি হলে কড়াকড়ি মিল দরকার হবে — কম প্রাসঙ্গিক উত্তর কমে যাবে, কিন্তু কিছু বৈধ উত্তরও বাদ পড়তে পারে।</p>
+    </div>
+    <div class="field">
+      <span data-i18n="topKLabel">প্রতি প্রশ্নে কতগুলো অংশ পাঠানো হবে</span>
+      <select id="rag_top_k">
+        <option value="2">2</option>
+        <option value="4">4</option>
+        <option value="6">6</option>
+        <option value="8">8</option>
+      </select>
+    </div>
+    <p class="hint" data-i18n="retrievalNextSession">এই দুটি পরিবর্তনও পরবর্তী সেশন থেকে কার্যকর হবে।</p>
+  </section>
+
+  <!-- Interface -->
+  <section class="card">
+    <h2 data-i18n="interfaceTitle">ইন্টারফেস</h2>
+    <div class="field">
+      <span data-i18n="orbSpeedLabel">অর্ব অ্যানিমেশনের গতি</span>
+      <select id="orb_speed">
+        <option value="slow" data-i18n="speedSlow">ধীর</option>
+        <option value="normal" data-i18n="speedNormal">স্বাভাবিক</option>
+        <option value="fast" data-i18n="speedFast">দ্রুত</option>
+      </select>
+    </div>
+    <div class="field">
+      <span data-i18n="fontSizeLabel">লেখার আকার</span>
+      <select id="font_size">
+        <option value="small" data-i18n="sizeSmall">ছোট</option>
+        <option value="normal" data-i18n="sizeNormal">স্বাভাবিক</option>
+        <option value="large" data-i18n="sizeLarge">বড়</option>
+      </select>
+    </div>
+  </section>
+
+  <!-- API key -->
+  <section class="card">
+    <h2 data-i18n="apiKeyTitle">Gemini API চাবি</h2>
+    <p class="hint" id="currentKeyHint">…</p>
+    <div class="field-row">
+      <label class="field" style="flex:1">
+        <span data-i18n="newApiKeyLabel">নতুন API চাবি</span>
+        <input type="password" id="apiKeyInput" placeholder="AIza..." autocomplete="off" />
+      </label>
+      <button class="primary-btn" id="saveKeyBtn" type="button" style="align-self:flex-end" data-i18n="saveBtn">সংরক্ষণ করুন</button>
+    </div>
+    <p class="hint" data-i18n="apiKeyHint">নতুন চাবি সাথে সাথে জ্ঞান ভাণ্ডার পুনরায় ইনডেক্স করবে। এই সার্ভার প্রসেসে এখনই কার্যকর হবে।</p>
+  </section>
+
+  <!-- Knowledge base -->
+  <section class="card">
+    <h2 data-i18n="kbTitle">জ্ঞান ভাণ্ডার</h2>
+    <p class="hint" id="kbSummary">…</p>
+    <ul class="file-list" id="kbFileList"></ul>
+    <button class="ghost-btn" id="reloadKbBtn" type="button" data-i18n="reloadKbBtn">পুনরায় ইনডেক্স করুন</button>
+  </section>
+
+  <button class="primary-btn save-all" id="saveAllBtn" type="button" data-i18n="saveAllBtn">সব পরিবর্তন সংরক্ষণ করুন</button>
+
+</main>
+
+<script src="/static/admin.js"></script>
+</body>
+</html>
