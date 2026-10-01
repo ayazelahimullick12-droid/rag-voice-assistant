@@ -24,6 +24,26 @@ ENV_PATH = BASE_DIR / ".env"
 
 VALID_VOICES = ["Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus", "Zephyr"]
 
+# Gemini Live models the voice session can run on, selectable in the admin
+# panel. The first one is the default; the LIVE_MODEL environment variable
+# overrides the default (and is accepted even if it isn't listed here).
+#
+# This is a setting because Google's Live models fail independently of one
+# another: when one stops hearing speech and returns "1011 Internal error",
+# switching to the other gets the assistant working again without a deploy.
+VALID_LIVE_MODELS = ["gemini-3.8-live", "gemini-3.1-flash-live-preview"]
+
+
+def default_live_model() -> str:
+    return os.environ.get("LIVE_MODEL", "").strip() or VALID_LIVE_MODELS[0]
+
+
+def live_model_choices() -> list:
+    """The models to offer in the admin panel (LIVE_MODEL first, if custom)."""
+    extra = [default_live_model()] if default_live_model() not in VALID_LIVE_MODELS else []
+    return extra + VALID_LIVE_MODELS
+
+
 DEFAULTS: Dict[str, Any] = {
     "voice": "Kore",
     "echo_guard_default": True,
@@ -40,6 +60,7 @@ DEFAULTS: Dict[str, Any] = {
 def load_settings() -> Dict[str, Any]:
     """Read settings.json, filling in any missing keys with defaults."""
     data = dict(DEFAULTS)
+    data["live_model"] = default_live_model()
     if SETTINGS_PATH.exists():
         try:
             saved = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
@@ -64,6 +85,9 @@ def _validate(data: Dict[str, Any]) -> Dict[str, Any]:
     """Clamp/normalize values so a bad admin-panel POST can't produce a broken config."""
     if data.get("voice") not in VALID_VOICES:
         data["voice"] = DEFAULTS["voice"]
+
+    if data.get("live_model") not in live_model_choices():
+        data["live_model"] = default_live_model()
 
     for key in ("echo_guard_default", "show_transcription", "show_only_assistant", "show_retrieval_logs"):
         data[key] = bool(data.get(key, DEFAULTS[key]))

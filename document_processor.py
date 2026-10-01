@@ -24,7 +24,7 @@ SUPPORTED_FORMATS = {'.pdf', '.txt', '.md', '.docx', '.doc', '.png', '.jpg', '.j
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
 # Text/vision generation model for document processing — separate from the
-# gemini-3.1-flash-live-preview used for the voice session. Override with
+# Live model used for the voice session (see settings_store). Override with
 # DOC_PROCESSING_MODEL if this ID 404s on your account/region.
 DOC_MODEL = os.environ.get("DOC_PROCESSING_MODEL", "gemini-3.5-flash")
 

@@ -110,6 +110,7 @@ mean to: on startup the database's copies replace the local `users.json`,
 | `SESSION_SECRET` | when hosted | Signs login cookies. Without it a random one is made at each start, so every restart logs everyone out |
 | `REGISTRATION_CODE` | when hosted | Invite code required on the register page. If unset, anyone who finds the address can register and use your Gemini quota |
 | `UPLOAD_GEMINI_API_KEY` | no | Separate key for document processing |
+| `LIVE_MODEL` | no | Default voice model, instead of `gemini-3.8-live`. The admin panel's "Voice model" setting overrides it |
 | `PORT` | no | Set by the host; defaults to 6001 |
 
 ## What's new in this version
@@ -141,6 +142,7 @@ mean to: on startup the database's copies replace the local `users.json`,
 | Setting | What it does | Applies |
 |---|---|---|
 | Voice preset | One of 8 Gemini voices: Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr | next session |
+| Voice model | Which Gemini Live model runs the conversation: `gemini-3.8-live` (default) or `gemini-3.1-flash-live-preview` | next session |
 | Echo guard default | Whether the mic mutes while the assistant speaks, by default | immediately (client-side default) |
 | Show transcription | Whether spoken text appears in the transcript at all | next session |
 | Show only assistant | Hide the user's own transcript, keep the assistant's | next session |
@@ -243,6 +245,18 @@ brac-rag/
 Sessions are signed cookies (HMAC with `SESSION_SECRET`), not a
 server-side table, so they survive restarts and need no database lookup.
 Users stay signed in for 30 days, admins for 8 hours.
+
+## If the assistant stops hearing you
+
+Google's Live models sometimes stop processing speech: the assistant sits
+on "শুনছি…", then the bar shows "Gemini এই মুহূর্তে সাড়া দিচ্ছে না" with
+`1011 Internal error`, while typed questions keep working. That is the
+model failing on Google's side, not the app or your microphone. The models
+fail independently, so switch to the other one: admin panel → **ভয়েস** →
+**ভয়েস মডেল**, save, and start a new conversation.
+
+On a host without a database that choice resets at the next restart; set
+`LIVE_MODEL` in the host's environment to change the default for good.
 
 ## Known limits, worth saying in a demo
 

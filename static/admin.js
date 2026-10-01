@@ -5,6 +5,7 @@
 
 const els = {
   voice: document.getElementById('voice'),
+  liveModel: document.getElementById('live_model'),
   echoGuard: document.getElementById('echo_guard_default'),
   showTranscription: document.getElementById('show_transcription'),
   showOnlyAssistant: document.getElementById('show_only_assistant'),
@@ -54,6 +55,8 @@ const I18N = {
     logout: 'লগআউট',
     voiceTitle: 'ভয়েস',
     voicePreset: 'ভয়েস প্রিসেট',
+    liveModelLabel: 'ভয়েস মডেল',
+    liveModelHint: 'সহকারী আপনার কথা না শুনলে বা "Gemini সাড়া দিচ্ছে না" দেখালে অন্য মডেলটি বেছে নিন।',
     voiceHint: 'পরিবর্তন পরবর্তী সেশন থেকে কার্যকর হবে — চলমান কথোপকথনে প্রভাব ফেলবে না।',
     behaviorTitle: 'আচরণ',
     echoGuardLabel: 'সহকারী বলার সময় মাইক বন্ধ (ডিফল্ট)',
@@ -107,6 +110,8 @@ const I18N = {
     logout: 'Log out',
     voiceTitle: 'Voice',
     voicePreset: 'Voice preset',
+    liveModelLabel: 'Voice model',
+    liveModelHint: 'If the assistant stops hearing you or shows "Gemini isn\u2019t responding", pick the other model.',
     voiceHint: 'Changes take effect on the next session \u2014 they won\u2019t affect a call in progress.',
     behaviorTitle: 'Behavior',
     echoGuardLabel: 'Mute mic while assistant speaks (default)',
@@ -270,6 +275,11 @@ async function loadSettings() {
       .join('');
     els.voice.value = s.voice;
 
+    els.liveModel.innerHTML = s._valid_live_models
+      .map((m) => `<option value="${m}">${m}</option>`)
+      .join('');
+    els.liveModel.value = s.live_model;
+
     els.echoGuard.checked = s.echo_guard_default;
     els.showTranscription.checked = s.show_transcription;
     els.showOnlyAssistant.checked = s.show_only_assistant;
@@ -301,6 +311,7 @@ async function saveAll() {
   try {
     const patch = {
       voice: els.voice.value,
+      live_model: els.liveModel.value,
       echo_guard_default: els.echoGuard.checked,
       show_transcription: els.showTranscription.checked,
       show_only_assistant: els.showOnlyAssistant.checked,

@@ -64,6 +64,7 @@ from settings_store import (
     write_api_key,
     masked_api_key,
     keys_saved_permanently,
+    live_model_choices,
     read_upload_api_key,
     write_upload_api_key,
     masked_upload_api_key,
@@ -87,7 +88,6 @@ load_dotenv(BASE_DIR / ".env")
 # Must run before anything reads users.json, settings.json or knowledge/.
 storage.restore()
 
-MODEL = "gemini-3.1-flash-live-preview"
 
 
 # Browsers cache /static/*.css and *.js on their own schedule, so after a
@@ -487,6 +487,7 @@ async def admin_get_settings(request: Request):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     s = load_settings()
     s["_valid_voices"] = VALID_VOICES
+    s["_valid_live_models"] = live_model_choices()
     s["_api_key_masked"] = masked_api_key()
     s["_api_key_temporary"] = not keys_saved_permanently()
     s["_knowledge"] = kb.info()
@@ -680,7 +681,7 @@ async def audio_bridge(ws: WebSocket):
     top_k = settings.get("rag_top_k", 4)
 
     try:
-        async with client.aio.live.connect(model=MODEL, config=config) as session:
+        async with client.aio.live.connect(model=settings["live_model"], config=config) as session:
             await ws.send_text(json.dumps({
                 "type": "ready",
                 "knowledge": kb.info(),
