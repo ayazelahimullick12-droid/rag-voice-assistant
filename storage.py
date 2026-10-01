@@ -111,6 +111,9 @@ def restore(attempts: int = 5) -> None:
     data (e.g. registered users) with stale files.
     """
     if not enabled():
+        if os.environ.get("RENDER"):  # set by Render on every service
+            print("[storage] no DATABASE_URL - accounts, settings and uploads made here "
+                  "are lost when the service restarts; only the repo's files come back")
         return
 
     delay = 2.0

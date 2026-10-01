@@ -16,8 +16,9 @@ services:
         sync: false
       - key: ADMIN_PASSWORD
         sync: false
-      - key: DATABASE_URL       # Neon connection string (postgresql://...)
-        sync: false
+      # Optional, not asked for: add DATABASE_URL (a Postgres connection
+      # string, e.g. from Neon) under Environment later if you want
+      # accounts, settings and uploads to survive restarts. See README.
       # Generated for you. REGISTRATION_CODE is what new users type on the
       # register page — find it (or change it) under Environment.
       - key: SESSION_SECRET

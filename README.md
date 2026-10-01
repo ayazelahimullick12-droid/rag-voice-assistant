@@ -24,53 +24,75 @@ On `localhost` the microphone works over plain HTTP. From any other device
 the browser only allows the microphone over **HTTPS**, which is what the
 hosted setup below gives you.
 
-## Deploying online for free (Render + Neon)
+## Deploying online for free (Render)
 
-Two free services, no credit card:
-
-- **Render** runs the app and gives it an `https://…onrender.com` address
-  (HTTPS and WebSockets included).
-- **Neon** is a small Postgres database. Render's free tier wipes the
-  app's disk every time it sleeps, restarts or redeploys; the database is
-  what keeps registered users, settings and uploaded documents. See
-  `storage.py`.
+**Render** runs the app for free (no credit card) and gives it an
+`https://…onrender.com` address, with HTTPS and WebSockets included.
 
 ### Steps
 
 1. **Push this folder to GitHub.** A private repository is fine (and
    recommended — the knowledge documents are in it).
-2. **Create the database.** Sign up at <https://neon.com>, create a
-   project (pick the Singapore region), and copy its *connection string* —
-   it starts with `postgresql://`.
-3. **Create the app.** Sign up at <https://render.com> → **New** →
-   **Blueprint** → choose this repository. Render reads `render.yaml` and
-   asks for three values:
+2. **Create the app.** Sign up at <https://render.com> → **New** →
+   **Blueprint** → choose this repository and the branch to deploy. Render
+   reads `render.yaml` and asks for two values:
    - `GEMINI_API_KEY` — your Gemini key
    - `ADMIN_PASSWORD` — a new password for the admin panel
-   - `DATABASE_URL` — the Neon connection string from step 2
-4. **Wait for the first deploy** (a few minutes), then open the
+3. **Wait for the first deploy** (a few minutes), then open the
    `…onrender.com` address Render shows.
-5. **Sign in.** Accounts already in `users.json` work straight away. New
+4. **Sign in.** Accounts already in `users.json` work straight away. New
    people register with the invite code: in Render open the service →
    **Environment** → `REGISTRATION_CODE`. It's generated for you; change it
    there to something easier to type if you like.
-6. **On a phone**, open the same address in Chrome or Safari and allow the
+5. **On a phone**, open the same address in Chrome or Safari and allow the
    microphone when asked. "Add to Home screen" makes it feel like an app.
 
-### Things to know
+### What is kept, and what isn't
 
-- **The first visit after a quiet spell takes about a minute.** The free
-  tier puts the app to sleep after 15 minutes without traffic and wakes it
-  on the next request. Nobody is logged out and nothing is lost.
+Render's free tier has no permanent disk. The app's files go back to
+what's in the GitHub repo whenever the service **restarts**, which happens:
+
+- after 15 minutes with no traffic (it sleeps, then wakes on the next
+  visit — that first visit takes about a minute),
+- on every deploy, i.e. every push to GitHub,
+- occasionally when Render moves or restarts the service.
+
+| | After a restart |
+|---|---|
+| Accounts in the repo's `users.json` | kept |
+| Documents in the repo's `knowledge/` | kept |
+| Settings in the repo's `settings.json` | kept |
+| API keys, admin password, invite code (Render → Environment) | kept |
+| Being logged in | kept |
+| Accounts registered on the hosted app | **lost** |
+| Documents uploaded at `/upload` on the hosted app | **lost** |
+| Settings changed in the hosted admin panel | **lost** |
+
+So with Render alone, make lasting changes **in the repo**: add documents
+to `knowledge/` (or upload them on your own computer, where `/upload`
+writes into that folder), register accounts on your own computer so they
+land in `users.json`, then commit and push.
+
+### Optional: keep everything across restarts (Neon)
+
+To make accounts, uploads and settings made on the hosted app permanent,
+add a free Postgres database:
+
+1. Sign up at <https://neon.com> (no credit card), create a project in the
+   Singapore region, and copy its *connection string* (`postgresql://…`).
+2. In Render open the service → **Environment** → add `DATABASE_URL` with
+   that string, and save. The service restarts and from then on mirrors its
+   data files to the database (`storage.py`).
+
+**Don't put the hosted `DATABASE_URL` in your local `.env`** unless you
+mean to: on startup the database's copies replace the local `users.json`,
+`settings.json` and `knowledge/` files.
+
+### Other things to know
+
 - **Updating:** push to GitHub and Render redeploys automatically.
 - **API keys and passwords** are changed in Render → Environment, not in
   the admin panel (the admin panel shows the key but locks the field).
-- **Documents** uploaded at `/upload`, and ones deleted in the admin panel,
-  are stored in the database. Documents committed to `knowledge/` in the
-  repo are picked up on the next deploy.
-- **Don't put the hosted `DATABASE_URL` in your local `.env`** unless you
-  mean to: on startup the database's copies replace the local
-  `users.json`, `settings.json` and `knowledge/` files.
 
 ### Environment variables
 
@@ -79,7 +101,7 @@ Two free services, no credit card:
 | `GEMINI_API_KEY` | yes | Voice sessions and retrieval embeddings |
 | `ADMIN_PASSWORD` | yes | Admin panel password; the panel is locked without it |
 | `ADMIN_USERNAME` | no | Admin username, default `admin` |
-| `DATABASE_URL` | when hosted | Postgres connection string; keeps data across restarts |
+| `DATABASE_URL` | no | Postgres connection string; keeps accounts, settings and uploads made on the host across restarts |
 | `SESSION_SECRET` | when hosted | Signs login cookies. Without it a random one is made at each start, so every restart logs everyone out |
 | `REGISTRATION_CODE` | when hosted | Invite code required on the register page. If unset, anyone who finds the address can register and use your Gemini quota |
 | `UPLOAD_GEMINI_API_KEY` | no | Separate key for document processing |
@@ -88,7 +110,7 @@ Two free services, no credit card:
 ## What's new in this version
 
 - **Ready to host**: one server on one port, secrets from the environment,
-  data mirrored to Postgres, signed login cookies that survive restarts,
+  optional mirroring of data to Postgres, signed login cookies that survive restarts,
   an invite code for registration, a `/healthz` check, and `render.yaml`.
 - **Document upload moved into the main app** (`/upload`, admin only). The
   separate `upload_server.py` on port 6501 is gone, and an upload now
@@ -213,7 +235,8 @@ Users stay signed in for 30 days, admins for 8 hours.
   everyone out, and changing `ADMIN_PASSWORD` signs all admins out.
 - There is no limit on login attempts, so choose a long admin password.
 - Free hosting sleeps when idle — the first request after a quiet spell
-  takes about a minute.
+  takes about a minute, and without `DATABASE_URL` anything saved on the
+  host since the last deploy is gone.
 - Every voice session uses your Gemini quota. Keep the invite code among
   the people who should have access.
 - Light mode is a background/text swap, not a full redesign — the magenta
