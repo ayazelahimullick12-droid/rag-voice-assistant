@@ -293,6 +293,12 @@ select option {
   line-height: 1.6;
   overflow-wrap: anywhere;   /* the masked API key is one long unbroken run */
 }
+.hint.warn {
+  color: #FFC27A;
+  border-left: 2px solid #FFC27A;
+  padding-left: 0.7rem;
+}
+[data-theme="light"] .hint.warn { color: #9A5B00; border-left-color: #C77700; }
 
 .switch-row {
   display: flex;

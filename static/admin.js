@@ -16,6 +16,7 @@ const els = {
   fontSize: document.getElementById('font_size'),
   apiKeyInput: document.getElementById('apiKeyInput'),
   currentKeyHint: document.getElementById('currentKeyHint'),
+  keyTemporaryNote: document.getElementById('keyTemporaryNote'),
   saveKeyBtn: document.getElementById('saveKeyBtn'),
   kbSummary: document.getElementById('kbSummary'),
   kbFileList: document.getElementById('kbFileList'),
@@ -98,8 +99,7 @@ const I18N = {
     confirmDeletePrefix: 'আপনি কি নিশ্চিতভাবে মুছে ফেলতে চান: ',
     confirmDeleteSuffix: ' ? এটি পূর্বাবস্থায় ফেরানো যাবে না।',
     fileDeletedOk: 'ফাইল মুছে ফেলা হয়েছে এবং জ্ঞান ভাণ্ডার হালনাগাদ হয়েছে',
-    keyManagedSuffix: ' — হোস্টিং ড্যাশবোর্ডে সেট করা (যেমন Render → Environment); পরিবর্তন সেখান থেকেই করুন',
-    keyManagedPlaceholder: 'হোস্টিং ড্যাশবোর্ড থেকে পরিবর্তন করুন',
+    keyTemporaryNote: 'কোনো ডেটাবেস সংযুক্ত নেই, তাই এখানে সংরক্ষিত চাবি শুধু সার্ভার রিস্টার্ট হওয়া পর্যন্ত থাকবে। এরপর হোস্টিং ড্যাশবোর্ডে (Render → Environment) সেট করা চাবি আবার ব্যবহৃত হবে।',
   },
   en: {
     panelTitle: 'Admin panel',
@@ -152,8 +152,7 @@ const I18N = {
     confirmDeletePrefix: 'Are you sure you want to delete: ',
     confirmDeleteSuffix: '? This cannot be undone.',
     fileDeletedOk: 'File deleted and the knowledge base was updated',
-    keyManagedSuffix: ' — set in the hosting dashboard (e.g. Render → Environment); change it there',
-    keyManagedPlaceholder: 'Change it in the hosting dashboard',
+    keyTemporaryNote: 'No database is connected, so a key saved here only lasts until the server restarts. After that the key set in the hosting dashboard (Render \u2192 Environment) is used again.',
   },
 };
 
@@ -186,17 +185,16 @@ applyStaticI18n();
 
 let lastKbInfo = null;
 let lastMaskedKey = '';
-let keyManaged = false;
+let keyTemporary = false;
 
 function refreshDynamicText() {
   if (lastKbInfo) renderKb(lastKbInfo);
-  els.currentKeyHint.textContent =
-    `${t('currentKeyPrefix')}${lastMaskedKey || t('noKeySet')}${keyManaged ? t('keyManagedSuffix') : ''}`;
-  // A key set by the host would come back on the next restart, so don't
-  // offer a form that looks like it changes it.
-  els.apiKeyInput.disabled = keyManaged;
-  els.saveKeyBtn.disabled = keyManaged;
-  els.apiKeyInput.placeholder = keyManaged ? t('keyManagedPlaceholder') : 'AIza...';
+  els.currentKeyHint.textContent = lastMaskedKey
+    ? `${t('currentKeyPrefix')}${lastMaskedKey}`
+    : `${t('currentKeyPrefix')}${t('noKeySet')}`;
+  // On a host with no database, a saved key works but doesn't survive a
+  // restart — say so next to the field instead of letting it surprise.
+  els.keyTemporaryNote.hidden = !keyTemporary;
 }
 
 /* ------------------------------------------------------------------ *
@@ -285,7 +283,7 @@ async function loadSettings() {
     els.fontSize.value = s.font_size;
 
     lastMaskedKey = s._api_key_masked || '';
-    keyManaged = !!s._api_key_managed;
+    keyTemporary = !!s._api_key_temporary;
     renderKb(s._knowledge);
     refreshDynamicText();
   } catch (err) {
@@ -354,7 +352,7 @@ async function saveApiKey() {
   } catch (err) {
     showBanner(err.message, 'error');
   } finally {
-    els.saveKeyBtn.disabled = keyManaged;
+    els.saveKeyBtn.disabled = false;
     els.saveKeyBtn.textContent = t('saveBtn');
   }
 }

@@ -62,12 +62,11 @@ from settings_store import (
     read_api_key,
     write_api_key,
     masked_api_key,
-    api_key_managed_by_host,
+    keys_saved_permanently,
     read_upload_api_key,
     write_upload_api_key,
     masked_upload_api_key,
     upload_key_is_dedicated,
-    upload_api_key_managed_by_host,
     VALID_VOICES,
 )
 
@@ -463,7 +462,7 @@ async def admin_get_settings(request: Request):
     s = load_settings()
     s["_valid_voices"] = VALID_VOICES
     s["_api_key_masked"] = masked_api_key()
-    s["_api_key_managed"] = api_key_managed_by_host()
+    s["_api_key_temporary"] = not keys_saved_permanently()
     s["_knowledge"] = kb.info()
     return JSONResponse(s)
 
@@ -601,7 +600,7 @@ async def admin_get_upload_key(request: Request):
     return JSONResponse({
         "masked": masked_upload_api_key(),
         "dedicated": upload_key_is_dedicated(),
-        "managed": upload_api_key_managed_by_host(),
+        "temporary": not keys_saved_permanently(),
     })
 
 

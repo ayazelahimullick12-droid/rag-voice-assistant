@@ -16,10 +16,12 @@ never talks to the database directly. Without DATABASE_URL every function
 here is a no-op, so running locally works exactly as before.
 
 Mirrored files (paths relative to this folder, also the table's key):
-  users.json, settings.json, .embed_cache.json, knowledge/*.md|.txt|.markdown
+  users.json, settings.json, saved_keys.json, .embed_cache.json,
+  knowledge/*.md|.txt|.markdown
 
-API keys are deliberately NOT mirrored — on a host they belong in the
-host's environment settings, not in a database.
+saved_keys.json holds API keys saved from the admin panel on a host, so
+those end up in the database too, unencrypted. Keys set in the host's own
+environment settings, and the local .env file, are never mirrored.
 """
 
 import os
@@ -30,7 +32,7 @@ from typing import Iterator, Optional
 
 BASE_DIR = Path(__file__).resolve().parent
 
-TRACKED_FILES = {"users.json", "settings.json", ".embed_cache.json"}
+TRACKED_FILES = {"users.json", "settings.json", "saved_keys.json", ".embed_cache.json"}
 TRACKED_DIRS = {"knowledge": {".md", ".txt", ".markdown"}}
 
 _CREATE_TABLE = """

@@ -67,6 +67,7 @@ what's in the GitHub repo whenever the service **restarts**, which happens:
 | Accounts registered on the hosted app | **lost** |
 | Documents uploaded at `/upload` on the hosted app | **lost** |
 | Settings changed in the hosted admin panel | **lost** |
+| An API key saved in the hosted admin panel | **lost** — the key set in Render → Environment is used again |
 
 So with Render alone, make lasting changes **in the repo**: add documents
 to `knowledge/` (or upload them on your own computer, where `/upload`
@@ -75,8 +76,8 @@ land in `users.json`, then commit and push.
 
 ### Optional: keep everything across restarts (Neon)
 
-To make accounts, uploads and settings made on the hosted app permanent,
-add a free Postgres database:
+To make accounts, uploads, settings and API keys saved on the hosted app
+permanent, add a free Postgres database:
 
 1. Sign up at <https://neon.com> (no credit card), create a project in the
    Singapore region, and copy its *connection string* (`postgresql://…`).
@@ -91,17 +92,21 @@ mean to: on startup the database's copies replace the local `users.json`,
 ### Other things to know
 
 - **Updating:** push to GitHub and Render redeploys automatically.
-- **API keys and passwords** are changed in Render → Environment, not in
-  the admin panel (the admin panel shows the key but locks the field).
+- **The Gemini key** can be changed from the admin panel at any time and
+  takes effect straight away. Without a database it lasts until the next
+  restart, after which the key in Render → Environment is used again — so
+  put the key you normally use there. See "API key handling" below.
+- **The admin password and invite code** are changed in Render →
+  Environment.
 
 ### Environment variables
 
 | Variable | Needed | What it does |
 |---|---|---|
-| `GEMINI_API_KEY` | yes | Voice sessions and retrieval embeddings |
+| `GEMINI_API_KEY` | yes | Voice sessions and retrieval embeddings. A key saved from the admin panel overrides it |
 | `ADMIN_PASSWORD` | yes | Admin panel password; the panel is locked without it |
 | `ADMIN_USERNAME` | no | Admin username, default `admin` |
-| `DATABASE_URL` | no | Postgres connection string; keeps accounts, settings and uploads made on the host across restarts |
+| `DATABASE_URL` | no | Postgres connection string; keeps accounts, settings, uploads and saved API keys made on the host across restarts |
 | `SESSION_SECRET` | when hosted | Signs login cookies. Without it a random one is made at each start, so every restart logs everyone out |
 | `REGISTRATION_CODE` | when hosted | Invite code required on the register page. If unset, anyone who finds the address can register and use your Gemini quota |
 | `UPLOAD_GEMINI_API_KEY` | no | Separate key for document processing |
@@ -154,18 +159,29 @@ says this next to the relevant settings so it doesn't look broken.
 
 ## API key handling
 
-**Locally** the key lives in `.env` (`GEMINI_API_KEY=...`), not in
-`settings.json` — it's a secret, not a preference. Saving a new key from
-the admin panel:
+The key is a secret, not a preference, so it never goes into
+`settings.json` and is never shown in full.
+
+**On your own computer** it lives in `.env` (`GEMINI_API_KEY=...`). Saving
+a new key from the admin panel:
 
 1. Writes it to `.env` (replacing the old line, not duplicating it)
 2. Sets it in the current process's environment
 3. Re-creates the embedding client and re-indexes the knowledge base
 
-**When hosted** the key comes from the host's environment settings and
-there is no `.env`. The admin panel shows the masked key but disables the
-field: a key saved from the panel would be lost at the next restart, so it
-has to be changed in the host's dashboard instead.
+**When hosted** there is no `.env`; the key normally comes from the host's
+environment settings. You can still save a different key from the admin
+panel (or the upload page, for the document-processing key). It is written
+to `saved_keys.json`, takes effect immediately, and wins over the host's
+key for as long as that file exists:
+
+- **With `DATABASE_URL`** the file is mirrored to the database, so the
+  saved key survives restarts. It is stored there unencrypted.
+- **Without it** the host wipes the file at the next restart and the key
+  from the host's environment is back in effect. The admin panel shows a
+  note next to the field when this is the case.
+
+`saved_keys.json` is git-ignored — never commit it.
 
 ## File structure
 
@@ -181,6 +197,7 @@ brac-rag/
 ├── render.yaml            Render Blueprint (hosting config)
 ├── .python-version        Python version the host should use
 ├── .env                   Local secrets — git-ignored, you create it
+├── saved_keys.json        API keys saved from the admin panel on a host — git-ignored
 ├── settings.json          Created automatically on first admin save
 ├── users.json             Registered accounts
 ├── knowledge/             .md documents the assistant answers from
@@ -215,7 +232,7 @@ brac-rag/
 | `/api/admin/login` | POST | — | `{username, password}` → sets admin cookie |
 | `/api/admin/logout` | POST | — | Clears the admin cookie |
 | `/api/admin/settings` | GET / POST | admin | Read settings / save a patch (validated server-side) |
-| `/api/admin/apikey` | POST | admin | `{api_key}` → writes `.env`, re-indexes KB (local only) |
+| `/api/admin/apikey` | POST | admin | `{api_key}` → saves the key (`.env`, or `saved_keys.json` on a host), re-indexes KB |
 | `/api/admin/knowledge/reload` | POST | admin | Re-index `knowledge/` on demand |
 | `/api/admin/knowledge/{file}` | DELETE | admin | Delete a document |
 | `/upload` | GET | admin | Document upload page |

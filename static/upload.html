@@ -218,7 +218,8 @@ h1 {
 .link-to-voice a { color: var(--magenta-lit); text-decoration: none; font-weight: 500; padding: 0.3rem 0; }
 .link-to-voice a:hover { color: var(--ink); }
 
-.key-row input:disabled, .key-row button:disabled.managed { opacity: 0.5; cursor: not-allowed; }
+.key-note { margin: 0.7rem 0 0; font-size: 0.8rem; line-height: 1.6; color: #FFC27A; border-left: 2px solid #FFC27A; padding-left: 0.7rem; }
+[data-theme="light"] .key-note { color: #9A5B00; border-left-color: #C77700; }
 
 /* Phones: less padding around the card so the content gets the width,
    16px inputs so iOS doesn't zoom in on focus, and the theme switch
@@ -276,6 +277,7 @@ h1 {
       <button type="button" id="saveKeyBtn">সংরক্ষণ করুন</button>
     </div>
     <div class="key-status" id="keyStatus"></div>
+    <p class="key-note" id="keyTemporaryNote" hidden>কোনো ডেটাবেস সংযুক্ত নেই, তাই এখানে সংরক্ষিত চাবি শুধু সার্ভার রিস্টার্ট হওয়া পর্যন্ত থাকবে। এরপর হোস্টিং ড্যাশবোর্ডে (Render → Environment) সেট করা চাবি আবার ব্যবহৃত হবে।</p>
   </div>
 
   <div class="link-to-voice">
@@ -298,6 +300,7 @@ const els = {
   apiKeyInput: document.getElementById('apiKeyInput'),
   saveKeyBtn: document.getElementById('saveKeyBtn'),
   keyStatus: document.getElementById('keyStatus'),
+  keyTemporaryNote: document.getElementById('keyTemporaryNote'),
 };
 
 // Upload is admin-only; if the admin session expires, reloading this URL
@@ -384,15 +387,9 @@ async function loadKeyStatus() {
     const res = await fetch('/api/admin/upload-key');
     if (onUnauthorized(res)) return;
     const data = await res.json();
-    if (data.managed) {
-      // Set in the hosting dashboard — changing it here would be undone
-      // on the next restart, so the form is disabled instead.
-      els.apiKeyInput.disabled = true;
-      els.saveKeyBtn.disabled = true;
-      els.saveKeyBtn.classList.add('managed');
-      els.apiKeyInput.placeholder = 'হোস্টিং ড্যাশবোর্ড থেকে পরিবর্তন করুন';
-      els.currentKeyHint.textContent = `বর্তমান চাবি: ${data.masked || 'সেট করা নেই'} (হোস্টিং ড্যাশবোর্ডে সেট করা — যেমন Render → Environment)`;
-    } else if (!data.masked) {
+    // On a host with no database a saved key doesn't survive a restart.
+    els.keyTemporaryNote.hidden = !data.temporary;
+    if (!data.masked) {
       els.currentKeyHint.textContent = 'বর্তমান চাবি: সেট করা নেই';
     } else if (data.dedicated) {
       els.currentKeyHint.textContent = `বর্তমান চাবি: ${data.masked} (শুধু নথি প্রক্রিয়াকরণের জন্য আলাদা চাবি)`;

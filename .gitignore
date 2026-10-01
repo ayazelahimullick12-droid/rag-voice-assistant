@@ -1,6 +1,7 @@
 # Environment variables / API keys
 .env
 .env.*
+saved_keys.json
 
 # Python virtual environment
 .venv/
