@@ -50,6 +50,10 @@ const state = {
   playGain: null,
   playAnalyser: null,
   playHead: 0,
+  playLead: 0.2,      // seconds buffered before a reply starts playing (PLAY_LEAD_MIN)
+  replyOpen: false,   // a reply's audio has started arriving and isn't complete yet
+  lastAudioAt: 0,     // performance.now() of the latest audio chunk
+  underruns: 0,       // times the queue ran dry mid-reply (for diagnosis)
   sources: [],
   partial: { user: null, bot: null },
   clockScale: 1,      // set from orb_speed setting
@@ -167,6 +171,9 @@ function addNote(text) {
   n.textContent = text;
   els.log.appendChild(n);
   scrollLog();
+  // On a phone the log is tucked away in the sheet — show it in the bar too.
+  els.peekWho.textContent = 'বার্তা';
+  els.peekText.textContent = text;
 }
 
 function addCitation(payload) {
@@ -256,6 +263,14 @@ function setMode(mode) {
  * ------------------------------------------------------------------ */
 const AudioCtx = window.AudioContext || window.webkitAudioContext;
 
+// A reply starts playing this long after its first chunk arrives, so later
+// chunks have time to land; it grows (up to the max) if the queue still
+// runs dry. Slow or uneven connections otherwise make the voice stutter.
+const PLAY_LEAD_MIN = 0.2;
+const PLAY_LEAD_MAX = 0.8;
+const ECHO_TAIL = 0.35;       // seconds of room echo after the speaker stops
+const REPLY_STALL_MS = 3000;  // no audio for this long = the reply is over
+
 function newAudioContext(sampleRate) {
   // Older Safari rejects the sampleRate option; the default rate works too
   // (playback buffers carry their own rate, and the mic worklet resamples).
@@ -300,7 +315,24 @@ function enqueueAudio(arrayBuffer) {
   src.connect(state.playGain);
 
   const now = state.playCtx.currentTime;
-  if (state.playHead < now + 0.06) state.playHead = now + 0.06;
+  if (state.playHead < now + 0.02) {
+    // The queue is empty: either a reply is starting, or it ran dry in the
+    // middle of one because the next chunk was late. A late chunk shows up
+    // within moments of the queue emptying (a longer pause is the model
+    // looking something up) — when that happens, buffer more from now on.
+    if (state.replyOpen && now - state.playHead < 0.6) {
+      state.underruns += 1;
+      state.playLead = Math.min(PLAY_LEAD_MAX, state.playLead + 0.15);
+    }
+    state.playHead = now + state.playLead;
+  }
+  state.replyOpen = true;
+  state.lastAudioAt = performance.now();
+  // Mute straight away rather than waiting for the next animation frame
+  // (frames stop altogether while the screen is off or the tab is hidden).
+  if (state.micNode && els.echoGuard.checked) {
+    state.micNode.port.postMessage({ type: 'mute', value: true });
+  }
   src.start(state.playHead);
   state.playHead += buf.duration;
 
@@ -319,6 +351,31 @@ function stopPlayback() {
 
 function isSpeaking() {
   return !!state.playCtx && state.playHead > state.playCtx.currentTime + 0.02;
+}
+
+function endReply() {
+  state.replyOpen = false;
+}
+
+/* True from a reply's first audio chunk until the reply is complete AND the
+ * speaker has really gone quiet. Wider than isSpeaking() on purpose:
+ *
+ *  - it holds through brief gaps between chunks, and
+ *  - it adds the speaker's own output delay plus a little room echo at the
+ *    end, since sound keeps coming out after the audio clock says "done".
+ *
+ * The echo guard mutes the mic for this whole span. Muting only while
+ * isSpeaking() let the mic open during every small gap while the speaker
+ * was still sounding; Gemini heard its own voice, took it for the user
+ * interrupting, cut the reply off and started again — over and over.
+ */
+function assistantBusy() {
+  const ctx = state.playCtx;
+  if (!ctx) return false;
+  const tail = (ctx.outputLatency || ctx.baseLatency || 0) + ECHO_TAIL;
+  if (state.playHead + tail > ctx.currentTime) return true;
+  // Still mid-reply, unless audio stopped coming without a turn_complete.
+  return state.replyOpen && performance.now() - state.lastAudioAt < REPLY_STALL_MS;
 }
 
 /* ------------------------------------------------------------------ *
@@ -470,15 +527,21 @@ function openSocket() {
           break;
         case 'interrupted':
           stopPlayback();
+          endReply();
           commit('bot');
           break;
         case 'turn_complete':
+          endReply();
           commit('user');
           commit('bot');
           break;
         case 'error':
           setMode('error');
-          addNote(`সার্ভার থেকে বার্তা: ${msg.message}`);
+          // Gemini's own failures arrive as "1011 … Internal error" — say
+          // what that means, and keep the original text for diagnosis.
+          addNote(/1011|internal error/i.test(msg.message || '')
+            ? `Gemini এই মুহূর্তে সাড়া দিচ্ছে না। একটু পরে আবার চেষ্টা করুন। (${msg.message})`
+            : `সার্ভার থেকে বার্তা: ${msg.message}`);
           if (!settled) { settled = true; reject(new Error(msg.message)); }
           break;
       }
@@ -555,6 +618,7 @@ function finishSession() {
   releaseWakeLock();
   stopMic();
   stopPlayback();
+  endReply();
   if (state.ws) { try { state.ws.close(); } catch {} }
   state.ws = null;
   commit('user');
@@ -860,7 +924,9 @@ function frame(rawT) {
 
   const t = rawT * state.clockScale;
 
-  const speaking = isSpeaking();
+  // "busy" (not just "sound is queued") drives the label and the echo
+  // guard, so neither flickers during a short gap inside a reply.
+  const speaking = assistantBusy();
   const raw = speaking ? readLevel(state.playAnalyser) : readLevel(state.micAnalyser);
   smoothLevel += (raw - smoothLevel) * 0.2;
 

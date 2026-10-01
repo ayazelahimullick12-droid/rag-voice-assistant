@@ -41,6 +41,7 @@ import re
 import secrets
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -246,6 +247,31 @@ def _make_embed_client(api_key: str) -> genai.Client:
 
 
 _embed_client = _make_embed_client(read_api_key()) if read_api_key() else None
+
+# --- Gemini Live client, shared by every voice session ---------------------
+# Constructing a genai.Client costs well over a second of CPU (TLS setup).
+# Doing that for every conversation meant, on a host with a fraction of a
+# CPU, many seconds of "connecting…" each time — and it starved the audio
+# of anyone already mid-conversation. One client is built per API key and
+# reused; each session still gets its own connection from it.
+_live_client = None
+_live_client_key = ""
+_live_client_lock = threading.Lock()
+
+
+def _get_live_client(api_key: str) -> genai.Client:
+    global _live_client, _live_client_key
+    with _live_client_lock:
+        if _live_client is None or api_key != _live_client_key:
+            _live_client = genai.Client(api_key=api_key)
+            _live_client_key = api_key
+        return _live_client
+
+
+if read_api_key():
+    # Built in the background so the first conversation doesn't pay for it
+    # and startup (the host's health check) isn't held up.
+    threading.Thread(target=_get_live_client, args=(read_api_key(),), daemon=True).start()
 
 print("[rag] indexing knowledge/ ...")
 kb = KnowledgeBase(KNOWLEDGE_DIR, client=_embed_client)
@@ -491,10 +517,13 @@ async def admin_set_api_key(request: Request):
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
+    # Building clients is CPU-heavy — keep it off the event loop so audio
+    # for people mid-conversation keeps flowing.
     global _embed_client
-    _embed_client = _make_embed_client(new_key)
+    _embed_client = await asyncio.to_thread(_make_embed_client, new_key)
     kb.client = _embed_client
     await asyncio.to_thread(kb.load)
+    await asyncio.to_thread(_get_live_client, new_key)
 
     return JSONResponse({
         "success": True,
@@ -646,7 +675,7 @@ async def audio_bridge(ws: WebSocket):
         return
 
     settings = load_settings()
-    client = genai.Client(api_key=key)
+    client = await asyncio.to_thread(_get_live_client, key)
     config = build_live_config(settings)
     top_k = settings.get("rag_top_k", 4)
 
