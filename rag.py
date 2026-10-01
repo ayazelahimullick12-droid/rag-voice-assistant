@@ -16,6 +16,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import storage
+
 EMBED_MODEL = os.environ.get("RAG_EMBED_MODEL", "gemini-embedding-001")
 MIN_SCORE = float(os.environ.get("RAG_MIN_SCORE", "0.15"))
 
@@ -193,6 +195,7 @@ class KnowledgeBase:
     def _write_cache(self, cache: Dict[str, List[float]]) -> None:
         try:
             self.cache_path.write_text(json.dumps(cache), encoding="utf-8")
+            storage.save(self.cache_path)
         except Exception:
             pass
 

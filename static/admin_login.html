@@ -2,7 +2,7 @@
 <html lang="bn">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>অ্যাডমিন লগইন — ব্র্যাক</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -99,7 +99,8 @@ form.addEventListener('submit', async (e) => {
       const known = raw === 'ভুল ইউজারনেম অথবা পাসওয়ার্ড';
       throw new Error(known && savedLang === 'en' ? 'Incorrect username or password' : raw);
     }
-    window.location.href = '/admin';
+    // Served at /admin and /upload — reload whichever page asked for login.
+    window.location.replace(window.location.pathname);
   } catch (err) {
     errorBox.textContent = err.message;
     btn.disabled = false;

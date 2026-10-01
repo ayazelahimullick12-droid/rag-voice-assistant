@@ -1,8 +1,9 @@
 """
 JSON-backed user store for the voice assistant's own login/register system.
 
-This is separate from the admin panel's hardcoded admin/admin credentials —
-these are end-user accounts, created via /register, needed to use the
+This is separate from the admin panel's credentials (ADMIN_USERNAME /
+ADMIN_PASSWORD in the environment) — these are end-user accounts, created
+via /register, needed to use the
 voice assistant itself. Passwords are never stored in plain text: each is
 hashed with PBKDF2-HMAC-SHA256 and a random per-user salt.
 
@@ -20,6 +21,8 @@ import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+import storage
 
 BASE_DIR = Path(__file__).resolve().parent
 USERS_PATH = BASE_DIR / "users.json"
@@ -40,6 +43,7 @@ def _load() -> dict:
 
 def _save(users: dict) -> None:
     USERS_PATH.write_text(json.dumps(users, indent=2), encoding="utf-8")
+    storage.save(USERS_PATH)
 
 
 def _hash_password(password: str, salt: Optional[bytes] = None) -> tuple[str, str]:

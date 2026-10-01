@@ -1,0 +1,26 @@
+# Render Blueprint — creates the web service in one step.
+# Render dashboard → New → Blueprint → pick this repo. See README "Deploying".
+services:
+  - type: web
+    name: brac-voice-assistant
+    runtime: python
+    plan: free
+    region: singapore          # closest Render region to Bangladesh
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    envVars:
+      # You're asked for these when creating the Blueprint.
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: DATABASE_URL       # Neon connection string (postgresql://...)
+        sync: false
+      # Generated for you. REGISTRATION_CODE is what new users type on the
+      # register page — find it (or change it) under Environment.
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: REGISTRATION_CODE
+        generateValue: true

@@ -2,12 +2,21 @@
 <html lang="bn" data-theme="dark">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+<meta name="theme-color" content="#100309" />
 <title>ব্র্যাক ভয়েস সহকারী</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/static/styles.css" />
+<script>
+  // Apply the saved theme before first paint (app.js loads at the end of
+  // the page, which is too late and flashes the dark theme first).
+  (function () {
+    var t = localStorage.getItem('brac-theme') === 'light' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
 </head>
 <body>
 
@@ -25,9 +34,14 @@
     </div>
 
     <button class="theme-toggle" id="themeToggle" type="button" aria-label="থিম পরিবর্তন করুন" title="ডার্ক / লাইট">
-      <i class="icon-sun" aria-hidden="true"></i>
+      <svg class="theme-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+        <circle cx="12" cy="12" r="4.2" fill="currentColor"/>
+        <path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
       <span class="theme-track"><span class="theme-thumb"></span></span>
-      <i class="icon-moon" aria-hidden="true"></i>
+      <svg class="theme-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+        <path d="M20 14.2A8 8 0 0 1 9.8 4a8 8 0 1 0 10.2 10.2Z" fill="currentColor"/>
+      </svg>
     </button>
 
     <a class="settings-btn" href="/admin" aria-label="সেটিংস" title="সেটিংস">
@@ -81,11 +95,18 @@
 
 </main>
 
-<!-- Mobile: floating peek showing the latest turn, tap to open full feed -->
+<!-- Mobile: bar showing the latest turn, tap to open the full conversation -->
 <button class="feed-peek" id="feedPeek" type="button" aria-expanded="false">
-  <span class="feed-peek-who" id="peekWho">কথোপকথন</span>
+  <span class="feed-peek-head">
+    <span class="feed-peek-who" id="peekWho">কথোপকথন</span>
+    <span class="feed-peek-open">
+      সব দেখুন
+      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+        <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </span>
+  </span>
   <span class="feed-peek-text" id="peekText">মাইক চালু করে বাংলায় প্রশ্ন করুন</span>
-  <span class="feed-peek-chevron" aria-hidden="true">˅</span>
 </button>
 
 <aside class="panel" id="panel">

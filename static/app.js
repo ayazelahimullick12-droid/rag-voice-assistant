@@ -53,21 +53,30 @@ const state = {
   sources: [],
   partial: { user: null, bot: null },
   clockScale: 1,      // set from orb_speed setting
+  wakeLock: null,     // screen wake lock held while a session is open
 };
 
 /* ------------------------------------------------------------------ *
  * theme
  * ------------------------------------------------------------------ */
+// Colors the phone browser's own toolbar/status bar to match the page.
+const THEME_COLORS = { dark: '#100309', light: '#FBF6EC' };
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', THEME_COLORS[theme]);
+}
+
 function initTheme() {
   const saved = localStorage.getItem('brac-theme');
-  const theme = saved === 'light' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', theme);
+  applyTheme(saved === 'light' ? 'light' : 'dark');
 }
 
 function toggleTheme() {
   const current = document.documentElement.getAttribute('data-theme');
   const next = current === 'light' ? 'dark' : 'light';
-  document.documentElement.setAttribute('data-theme', next);
+  applyTheme(next);
   localStorage.setItem('brac-theme', next);
 }
 
@@ -245,9 +254,17 @@ function setMode(mode) {
 /* ------------------------------------------------------------------ *
  * audio out
  * ------------------------------------------------------------------ */
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+
+function newAudioContext(sampleRate) {
+  // Older Safari rejects the sampleRate option; the default rate works too
+  // (playback buffers carry their own rate, and the mic worklet resamples).
+  try { return new AudioCtx({ sampleRate }); } catch { return new AudioCtx(); }
+}
+
 function ensurePlayback() {
   if (state.playCtx) return;
-  const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: PLAY_RATE });
+  const ctx = newAudioContext(PLAY_RATE);
   const gain = ctx.createGain();
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 512;
@@ -258,6 +275,14 @@ function ensurePlayback() {
   state.playGain = gain;
   state.playAnalyser = analyser;
   state.playHead = 0;
+}
+
+function unlockPlayback() {
+  // Phones (iOS Safari especially) only let audio start from inside a tap.
+  // Call this first thing in a click/submit handler — before any await —
+  // or the reply would arrive and play silently.
+  ensurePlayback();
+  if (state.playCtx.state === 'suspended') state.playCtx.resume().catch(() => {});
 }
 
 function enqueueAudio(arrayBuffer) {
@@ -308,10 +333,33 @@ async function startMic() {
       autoGainControl: true,
     },
   });
-  const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SEND_RATE });
+  // Recorded straight away (and the context below too) so that stopMic()
+  // releases the microphone if any later step fails — otherwise the
+  // browser's "recording" indicator would stay on.
+  state.micStream = stream;
+
+  // Ask for a 16 kHz context so the browser does the resampling. Firefox
+  // refuses to connect a mic to a context at a different rate than the
+  // hardware, so fall back to the default rate there — mic-processor.js
+  // resamples to 16 kHz itself whenever the context isn't already at it.
+  let ctx = newAudioContext(SEND_RATE);
+  state.micCtx = ctx;
+  let source;
+  try {
+    source = ctx.createMediaStreamSource(stream);
+  } catch {
+    try { ctx.close(); } catch {}
+    ctx = new AudioCtx();
+    state.micCtx = ctx;
+    source = ctx.createMediaStreamSource(stream);
+  }
+  // Created after the permission prompt, i.e. outside the tap — phones
+  // can start such a context suspended, and then no audio would be sent.
+  // Not awaited: where a browser holds resume() back, the promise stays
+  // pending and would freeze the talk button.
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   await ctx.audioWorklet.addModule('/static/mic-processor.js');
 
-  const source = ctx.createMediaStreamSource(stream);
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 512;
   analyser.smoothingTimeConstant = 0.6;
@@ -330,8 +378,6 @@ async function startMic() {
   node.connect(silence);
   silence.connect(ctx.destination);
 
-  state.micStream = stream;
-  state.micCtx = ctx;
   state.micNode = node;
   state.micAnalyser = analyser;
 }
@@ -355,6 +401,35 @@ function stopMic() {
  * button opens the connection AND starts the mic together — or, if a
  * text-only connection is already open, just adds the mic on top of it.
  * ------------------------------------------------------------------ */
+/* Keep the phone's screen on while a conversation is open — when it locks,
+ * the browser suspends the page and the session drops. Only available on
+ * HTTPS, and not in every browser; it's a nicety, so failures are ignored. */
+async function holdWakeLock() {
+  if (!('wakeLock' in navigator) || state.wakeLock) return;
+  try {
+    const lock = await navigator.wakeLock.request('screen');
+    // The session may have ended, or another call may have won the race,
+    // while the request was pending — don't keep a lock nobody will release.
+    if (!state.running || state.wakeLock) { lock.release().catch(() => {}); return; }
+    state.wakeLock = lock;
+    lock.addEventListener('release', () => {
+      if (state.wakeLock === lock) state.wakeLock = null;
+    });
+  } catch {}
+}
+
+function releaseWakeLock() {
+  if (!state.wakeLock) return;
+  state.wakeLock.release().catch(() => {});
+  state.wakeLock = null;
+}
+
+// The browser drops the lock whenever the tab is hidden; take it again
+// when the user comes back to a conversation that's still open.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && state.running) holdWakeLock();
+});
+
 function openSocket() {
   // Resolves once the server's "ready" message arrives (the Live session
   // is actually up), not just once the raw socket opens — sending
@@ -366,7 +441,7 @@ function openSocket() {
     state.ws = ws;
     let settled = false;
 
-    ws.onopen = () => { state.running = true; };
+    ws.onopen = () => { state.running = true; holdWakeLock(); };
 
     ws.onmessage = (event) => {
       if (event.data instanceof ArrayBuffer) {
@@ -423,6 +498,7 @@ function openSocket() {
 }
 
 async function startSession() {
+  unlockPlayback();   // must run inside the tap, before the awaits below
   els.toggle.disabled = true;
   setMode('connecting');
 
@@ -438,8 +514,6 @@ async function startSession() {
   }
 
   try {
-    ensurePlayback();
-    if (state.playCtx.state === 'suspended') await state.playCtx.resume();
     await startMic();
     state.micRunning = true;
   } catch (err) {
@@ -459,16 +533,16 @@ async function startSession() {
 async function addMic() {
   // A text-only connection is already open — just switch the mic on
   // top of it, without reopening the socket.
+  unlockPlayback();
   els.toggle.disabled = true;
   try {
-    ensurePlayback();
-    if (state.playCtx.state === 'suspended') await state.playCtx.resume();
     await startMic();
     state.micRunning = true;
     els.toggle.setAttribute('aria-pressed', 'true');
     els.toggleText.textContent = 'থামুন';
     setMode('listening');
   } catch (err) {
+    stopMic();
     addNote('মাইক চালু করা যায়নি। ব্রাউজারে মাইক্রোফোনের অনুমতি দিন, তারপর আবার চেষ্টা করুন।');
   } finally {
     els.toggle.disabled = false;
@@ -478,6 +552,7 @@ async function addMic() {
 function finishSession() {
   state.running = false;
   state.micRunning = false;
+  releaseWakeLock();
   stopMic();
   stopPlayback();
   if (state.ws) { try { state.ws.close(); } catch {} }
@@ -507,13 +582,13 @@ els.toggle.addEventListener('click', () => {
 async function sendTextMessage() {
   const text = els.textInput.value.trim();
   if (!text) return;
+  unlockPlayback();   // must run inside the tap/Enter, before the await below
   els.textInput.value = '';
   els.textSendBtn.disabled = true;
 
   if (!state.running) {
     setMode('connecting');
     try {
-      ensurePlayback();
       await openSocket();
     } catch (err) {
       addNote('সংযোগ করা যায়নি। আবার চেষ্টা করুন।');

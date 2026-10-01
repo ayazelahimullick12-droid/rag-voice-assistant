@@ -2,7 +2,7 @@
 <html lang="bn">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>নতুন অ্যাকাউন্ট — ব্র্যাক ভয়েস সহকারী</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -39,6 +39,12 @@
     <input type="password" id="confirm" name="confirm" required autocomplete="new-password" minlength="6" />
   </label>
 
+  <label class="field" id="codeField" hidden>
+    <span>আমন্ত্রণ কোড</span>
+    <input type="text" id="code" name="code" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+    <small class="field-hint">অ্যাডমিনের কাছ থেকে পাওয়া কোডটি দিন</small>
+  </label>
+
   <div class="login-error" id="registerError"></div>
 
   <button type="submit" class="login-btn" id="registerBtn">অ্যাকাউন্ট তৈরি করুন</button>
@@ -50,6 +56,19 @@
 const form = document.getElementById('registerForm');
 const errorBox = document.getElementById('registerError');
 const btn = document.getElementById('registerBtn');
+const codeField = document.getElementById('codeField');
+const codeInput = document.getElementById('code');
+
+// Only ask for an invite code when the server is set up to require one.
+fetch('/api/auth/config')
+  .then((r) => r.json())
+  .then((cfg) => {
+    if (cfg.registration_code_required) {
+      codeField.hidden = false;
+      codeInput.required = true;
+    }
+  })
+  .catch(() => {});
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -71,7 +90,7 @@ form.addEventListener('submit', async (e) => {
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, code: codeInput.value.trim() }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'অ্যাকাউন্ট তৈরি করা যায়নি');

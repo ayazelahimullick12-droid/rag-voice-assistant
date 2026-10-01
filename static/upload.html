@@ -1,33 +1,8 @@
-"""
-BRAC Document Upload Server — separate from the voice assistant (port 6001).
-
-Accepts file uploads (images, PDFs, DOCX, TXT, MD) and processes them into
-markdown for the shared knowledge/ folder.
-
-Runs on port 6501.
-"""
-
-import tempfile
-from pathlib import Path
-
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
-
-from document_processor import DocumentProcessor
-from settings_store import read_upload_api_key, write_upload_api_key, masked_upload_api_key, upload_key_is_dedicated
-
-KNOWLEDGE_DIR = Path(__file__).resolve().parent / "knowledge"
-KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
-
-app = FastAPI(title="BRAC Document Upload")
-
-
-_PAGE_HTML = """
 <!DOCTYPE html>
 <html lang="bn">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>নথি আপলোড — ব্র্যাক</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -80,8 +55,10 @@ body {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
+  min-height: 100dvh;
   padding: 2rem;
   transition: background-color 0.2s, color 0.2s;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .theme-toggle {
@@ -202,7 +179,7 @@ h1 {
 .kb-label { font-weight: 600; color: var(--magenta); display: block; margin-bottom: 0.4rem; }
 
 .key-box { margin-top: 1rem; padding: 1rem; background: var(--input-bg); border-radius: 8px; }
-.key-hint { margin: 0 0 0.7rem; font-size: 0.82rem; color: var(--muted); }
+.key-hint { margin: 0 0 0.7rem; font-size: 0.82rem; color: var(--muted); overflow-wrap: anywhere; }
 .key-row { display: flex; gap: 0.6rem; }
 .key-row input {
   flex: 1;
@@ -237,9 +214,27 @@ h1 {
 [data-theme="light"] .key-status.ok { color: #2E7D32; }
 [data-theme="light"] .key-status.error { color: #B42323; }
 
-.link-to-voice { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--edge); text-align: center; }
-.link-to-voice a { color: var(--magenta-lit); text-decoration: none; font-weight: 500; }
+.link-to-voice { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--edge); display: flex; justify-content: center; flex-wrap: wrap; gap: 0.5rem 1.5rem; }
+.link-to-voice a { color: var(--magenta-lit); text-decoration: none; font-weight: 500; padding: 0.3rem 0; }
 .link-to-voice a:hover { color: var(--ink); }
+
+.key-row input:disabled, .key-row button:disabled.managed { opacity: 0.5; cursor: not-allowed; }
+
+/* Phones: less padding around the card so the content gets the width,
+   16px inputs so iOS doesn't zoom in on focus, and the theme switch
+   moves out of the corner the card now reaches. */
+@media (max-width: 560px) {
+  body { padding: 3.2rem 0.75rem calc(1.5rem + env(safe-area-inset-bottom, 0px)); justify-content: flex-start; }
+  .theme-toggle { top: max(0.6rem, env(safe-area-inset-top, 0px)); right: 0.75rem; padding: 0.6rem; }
+  .container { padding: 1.5rem 1.1rem; border-radius: 14px; }
+  h1 { font-size: 1.35rem; }
+  .subtitle { margin-bottom: 1.4rem; }
+  .upload-box { padding: 1.4rem 1rem; min-height: 150px; }
+  .upload-icon { font-size: 2.4rem; }
+  .key-row { flex-direction: column; }
+  .key-row input { font-size: 16px; padding: 0.7rem 0.8rem; }
+  .key-row button { padding: 0.75rem 1rem; font-size: 0.95rem; }
+}
 </style>
 </head>
 <body>
@@ -284,7 +279,8 @@ h1 {
   </div>
 
   <div class="link-to-voice">
-    <a href="#" id="voiceLink">← ভয়েস সহকারীতে ফিরুন</a>
+    <a href="/">← ভয়েস সহকারী</a>
+    <a href="/admin">অ্যাডমিন প্যানেল</a>
   </div>
 </div>
 
@@ -298,16 +294,18 @@ const els = {
   uploadsContainer: document.getElementById('uploadsContainer'),
   kbStats: document.getElementById('kbStats'),
   themeToggle: document.getElementById('themeToggle'),
-  voiceLink: document.getElementById('voiceLink'),
   currentKeyHint: document.getElementById('currentKeyHint'),
   apiKeyInput: document.getElementById('apiKeyInput'),
   saveKeyBtn: document.getElementById('saveKeyBtn'),
   keyStatus: document.getElementById('keyStatus'),
 };
 
-// Point back at the voice assistant on whatever host this page is being
-// viewed from, on its port (6001), not a hardcoded 'localhost'.
-els.voiceLink.href = `${location.protocol}//${location.hostname}:6001`;
+// Upload is admin-only; if the admin session expires, reloading this URL
+// shows the admin login form, which brings you straight back here.
+function onUnauthorized(res) {
+  if (res.status === 401) { window.location.reload(); return true; }
+  return false;
+}
 
 function toggleTheme() {
   const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
@@ -318,11 +316,15 @@ els.themeToggle.addEventListener('click', toggleTheme);
 
 const uploads = [];
 
+function renderKbInfo(data) {
+  els.kbStats.innerHTML = `<div><strong>${data.files.length}</strong> ফাইল</div><div><strong>${data.chunks}</strong> অনুচ্ছেদ</div>`;
+}
+
 async function loadKbInfo() {
   try {
-    const res = await fetch('/api/kb-info');
-    const data = await res.json();
-    els.kbStats.innerHTML = `<div><strong>${data.files.length}</strong> ফাইল</div><div><strong>${data.chunks}</strong> অনুচ্ছেদ</div>`;
+    const res = await fetch('/api/knowledge');
+    if (onUnauthorized(res)) return;
+    renderKbInfo(await res.json());
   } catch (err) {
     els.kbStats.textContent = 'সংযোগ করা যাচ্ছে না';
   }
@@ -339,7 +341,8 @@ async function uploadFile(file) {
   els.uploadFile.disabled = true;
 
   try {
-    const res = await fetch('/api/upload', { method: 'POST', body: formData });
+    const res = await fetch('/api/admin/upload', { method: 'POST', body: formData });
+    if (onUnauthorized(res)) return;
     let data = {};
     try { data = await res.json(); } catch {}
     if (!res.ok) {
@@ -352,7 +355,7 @@ async function uploadFile(file) {
     els.status.innerHTML = `✓ <strong>${data.filename}</strong> যোগ হয়েছে`;
     els.status.className = 'status show success';
     els.uploadFile.value = '';
-    await loadKbInfo();
+    if (data.knowledge) renderKbInfo(data.knowledge);
     setTimeout(() => { els.status.classList.remove('show'); }, 3000);
   } catch (err) {
     els.status.textContent = `❌ সমস্যা: ${err.message}`;
@@ -375,13 +378,21 @@ els.uploadBox.addEventListener('dragleave', () => els.uploadBox.classList.remove
 els.uploadBox.addEventListener('drop', (e) => { e.preventDefault(); els.uploadBox.classList.remove('drag'); uploadFile(e.dataTransfer.files[0]); });
 
 loadKbInfo();
-setInterval(loadKbInfo, 10000);
 
 async function loadKeyStatus() {
   try {
-    const res = await fetch('/api/key');
+    const res = await fetch('/api/admin/upload-key');
+    if (onUnauthorized(res)) return;
     const data = await res.json();
-    if (!data.masked) {
+    if (data.managed) {
+      // Set in the hosting dashboard — changing it here would be undone
+      // on the next restart, so the form is disabled instead.
+      els.apiKeyInput.disabled = true;
+      els.saveKeyBtn.disabled = true;
+      els.saveKeyBtn.classList.add('managed');
+      els.apiKeyInput.placeholder = 'হোস্টিং ড্যাশবোর্ড থেকে পরিবর্তন করুন';
+      els.currentKeyHint.textContent = `বর্তমান চাবি: ${data.masked || 'সেট করা নেই'} (হোস্টিং ড্যাশবোর্ডে সেট করা — যেমন Render → Environment)`;
+    } else if (!data.masked) {
       els.currentKeyHint.textContent = 'বর্তমান চাবি: সেট করা নেই';
     } else if (data.dedicated) {
       els.currentKeyHint.textContent = `বর্তমান চাবি: ${data.masked} (শুধু নথি প্রক্রিয়াকরণের জন্য আলাদা চাবি)`;
@@ -403,11 +414,12 @@ async function saveKey() {
   els.saveKeyBtn.disabled = true;
   els.saveKeyBtn.textContent = 'সংরক্ষণ করা হচ্ছে…';
   try {
-    const res = await fetch('/api/key', {
+    const res = await fetch('/api/admin/upload-key', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ api_key: key }),
     });
+    if (onUnauthorized(res)) return;
     let data = {};
     try { data = await res.json(); } catch {}
     if (!res.ok) throw new Error(data.error || `সার্ভার সমস্যা (${res.status})`);
@@ -432,97 +444,3 @@ loadKeyStatus();
 
 </body>
 </html>
-"""
-
-
-@app.get("/")
-async def index():
-    """Serve the upload interface, with no-store caching (this page reads
-    live knowledge-base state on load, so it should never be cached)."""
-    return HTMLResponse(_PAGE_HTML, headers={
-        "Cache-Control": "no-store, no-cache, must-revalidate",
-        "Pragma": "no-cache",
-    })
-
-
-@app.post("/api/upload")
-async def upload_document(file: UploadFile = File(...)):
-    """Upload and process a document into markdown."""
-    api_key = read_upload_api_key()
-    if not api_key:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not set")
-
-    processor = DocumentProcessor(api_key=api_key)
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename).suffix) as tmp:
-        contents = await file.read()
-        tmp.write(contents)
-        tmp_path = Path(tmp.name)
-
-    try:
-        markdown, suggested_name = await processor.process_upload(tmp_path, file.filename)
-        output_path = KNOWLEDGE_DIR / suggested_name
-        output_path.write_text(markdown, encoding='utf-8')
-        print(f"[upload] {file.filename} → {suggested_name} ({len(markdown)} chars)")
-        return {"success": True, "filename": suggested_name, "size": len(markdown)}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        print(f"[upload error] {file.filename}: {e}")
-        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
-    finally:
-        try:
-            tmp_path.unlink()
-        except Exception:
-            pass
-
-
-@app.get("/api/kb-info")
-async def kb_info():
-    """Read knowledge folder and return info."""
-    files = sorted([f.name for f in KNOWLEDGE_DIR.glob("*.md")])
-    chunk_count = 0
-    for f in files:
-        content = (KNOWLEDGE_DIR / f).read_text(encoding='utf-8', errors='ignore')
-        headings = sum(1 for l in content.split('\n') if l.startswith('#'))
-        chunk_count += max(2, headings)
-    return {"files": files, "chunks": chunk_count}
-
-
-@app.get("/api/key")
-async def get_key():
-    """
-    Masked view of the key document processing is currently using — never
-    returns it in full. 'dedicated' tells the UI whether this is an
-    upload-specific key or the app is falling back to the shared one.
-    """
-    return {
-        "masked": masked_upload_api_key(),
-        "dedicated": upload_key_is_dedicated(),
-    }
-
-
-@app.post("/api/key")
-async def set_key(request: Request):
-    """
-    Set a document-processing key independent of the shared GEMINI_API_KEY
-    used by the voice assistant. Writes UPLOAD_GEMINI_API_KEY to the same
-    .env file the admin panel (server.py, port 6001) reads from, alongside
-    (not replacing) the shared key.
-    """
-    body = await request.json()
-    new_key = str(body.get("api_key", "")).strip()
-    if not new_key:
-        return JSONResponse({"error": "চাবি ফাঁকা রাখা যাবে না"}, status_code=400)
-
-    try:
-        write_upload_api_key(new_key)
-    except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
-
-    return {"success": True, "masked": masked_upload_api_key(), "dedicated": True}
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("upload_server:app", host="0.0.0.0", port=6501, reload=False)

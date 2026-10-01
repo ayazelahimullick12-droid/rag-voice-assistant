@@ -36,7 +36,9 @@ body {
   color: var(--ink);
   font-family: "Hind Siliguri", "Noto Sans Bengali", system-ui, sans-serif;
   min-height: 100vh;
+  min-height: 100dvh;   /* phones: the height that's actually visible */
   transition: background-color 0.2s, color 0.2s;
+  -webkit-tap-highlight-color: transparent;
 }
 [data-theme="light"] body {
   background:
@@ -101,6 +103,9 @@ body {
   transition: border-color 0.16s;
 }
 .field input:focus, .field select:focus { border-color: var(--magenta); }
+.field[hidden] { display: none; }
+.field-hint { font-size: 0.78rem; color: var(--muted); opacity: 0.85; }
+.field input:disabled { opacity: 0.55; cursor: not-allowed; }
 .field input[type="range"] { padding: 0; background: none; border: none; accent-color: var(--magenta); }
 
 /* Dropdowns: force a solid, theme-matched background + readable text on
@@ -136,6 +141,7 @@ select option {
 .login-btn:hover, .primary-btn:hover { opacity: 0.92; }
 .login-btn:active, .primary-btn:active { transform: translateY(1px); }
 .login-btn:disabled { opacity: 0.6; cursor: wait; }
+.primary-btn:disabled { opacity: 0.55; cursor: default; }
 
 .back-link {
   text-align: center;
@@ -285,6 +291,7 @@ select option {
   font-size: 0.8rem;
   color: var(--muted);
   line-height: 1.6;
+  overflow-wrap: anywhere;   /* the masked API key is one long unbroken run */
 }
 
 .switch-row {
@@ -373,6 +380,25 @@ select option {
 
 @media (max-width: 560px) {
   .field-row { flex-direction: column; align-items: stretch; }
-  .admin-head { padding: 1rem; }
-  .admin-head-actions { flex-wrap: wrap; }
+
+  /* Not sticky on phones: once its buttons wrap onto extra rows, a sticky
+     header would permanently cover a fifth of the screen. */
+  .admin-head {
+    position: static;
+    padding: max(0.8rem, env(safe-area-inset-top, 0px)) 0.9rem 0.8rem;
+    gap: 0.6rem;
+  }
+  .admin-head-actions { flex-wrap: wrap; gap: 0.5rem; }
+  .ghost-btn { padding: 0.5rem 0.9rem; }
+
+  .admin-main { padding: 1.1rem 0.8rem calc(3rem + env(safe-area-inset-bottom, 0px)); }
+  .card { padding: 1.1rem 1rem; }
+  .switch-row { padding: 0.15rem 0; }
+  .file-delete { width: 2.2rem; height: 2.2rem; }
+
+  .login-body { padding: 1rem; }
+  .login-card { padding: 1.6rem 1.3rem; }
+
+  /* 16px keeps iOS Safari from zooming the page when a field is focused. */
+  .field input, .field select { font-size: 16px; }
 }

@@ -2,12 +2,19 @@
 <html lang="bn">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>অ্যাডমিন প্যানেল — ব্র্যাক ভয়েস সহকারী</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/static/admin.css" />
+<script>
+  // Apply the saved theme before paint (shared 'brac-theme' key).
+  (function () {
+    var t = localStorage.getItem('brac-theme') === 'light' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
 </head>
 <body>
 
@@ -27,7 +34,7 @@
     </button>
 
     <a href="/" class="ghost-btn" data-i18n="backToVoice">← ভয়েস সহকারী</a>
-    <a href="#" class="ghost-btn" id="uploadLink" target="_blank" rel="noopener" data-i18n="uploadDocs">নথি আপলোড</a>
+    <a href="/upload" class="ghost-btn" data-i18n="uploadDocs">নথি আপলোড</a>
     <button class="ghost-btn" id="logoutBtn" type="button" data-i18n="logout">লগআউট</button>
   </div>
 </header>
@@ -119,7 +126,7 @@
         <span data-i18n="newApiKeyLabel">নতুন API চাবি</span>
         <input type="password" id="apiKeyInput" placeholder="AIza..." autocomplete="off" />
       </label>
-      <button class="primary-btn" id="saveKeyBtn" type="button" style="align-self:flex-end" data-i18n="saveBtn">সংরক্ষণ করুন</button>
+      <button class="primary-btn" id="saveKeyBtn" type="button" data-i18n="saveBtn">সংরক্ষণ করুন</button>
     </div>
     <p class="hint" data-i18n="apiKeyHint">নতুন চাবি সাথে সাথে জ্ঞান ভাণ্ডার পুনরায় ইনডেক্স করবে। এই সার্ভার প্রসেসে এখনই কার্যকর হবে।</p>
   </section>

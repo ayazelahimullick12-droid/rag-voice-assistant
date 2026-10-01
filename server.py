@@ -9,9 +9,13 @@ browser speaker), plus:
   - an endpoint to add/replace the Gemini API key from the admin panel
   - a JSON-file user database (users.json) gating access to the assistant
     itself behind login/register — separate from the admin panel, which
-    keeps its own hardcoded credentials
+    has its own credentials (ADMIN_USERNAME / ADMIN_PASSWORD)
+  - document upload (/upload, admin only), which turns PDFs, images and
+    Word files into markdown in knowledge/
 
-Runs on port 6001.
+Runs on port 6001 locally, or on $PORT when a host (e.g. Render) sets one.
+When DATABASE_URL is set, data files are also kept in Postgres so they
+survive hosts that wipe the disk on restart — see storage.py.
 
 IMPORTANT: routes that serve different HTML for the same URL depending on
 session state (/, /admin, /login, /register) must NEVER be served via
@@ -28,13 +32,19 @@ Cache-Control: no-store.
 """
 
 import asyncio
+import base64
+import hashlib
 import hmac
 import json
+import os
+import re
 import secrets
+import sys
+import tempfile
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, File, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -42,7 +52,9 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+import storage
 import users_store
+from document_processor import DocumentProcessor
 from rag import KnowledgeBase
 from settings_store import (
     load_settings,
@@ -50,6 +62,12 @@ from settings_store import (
     read_api_key,
     write_api_key,
     masked_api_key,
+    api_key_managed_by_host,
+    read_upload_api_key,
+    write_upload_api_key,
+    masked_upload_api_key,
+    upload_key_is_dedicated,
+    upload_api_key_managed_by_host,
     VALID_VOICES,
 )
 
@@ -57,9 +75,35 @@ BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 KNOWLEDGE_DIR = BASE_DIR / "knowledge"
 
+# Log lines include Bengali file names. On a console that isn't UTF-8
+# (Windows with output redirected) print() would raise mid-request —
+# escape what can't be shown instead.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(errors="backslashreplace")
+
 load_dotenv(BASE_DIR / ".env")
 
+# Must run before anything reads users.json, settings.json or knowledge/.
+storage.restore()
+
 MODEL = "gemini-3.1-flash-live-preview"
+
+
+# Browsers cache /static/*.css and *.js on their own schedule, so after a
+# deploy a phone can keep running old CSS/JS against new HTML. Every page
+# links its assets as "/static/x.css?v=<hash of all css/js>": the URL
+# changes exactly when a file changes, which forces a fresh download.
+_ASSET_URL_RE = re.compile(r"/static/[\w.-]+\.(?:css|js)\b")
+
+
+def _asset_version() -> str:
+    digest = hashlib.sha1()
+    for path in sorted(STATIC_DIR.glob("*")):
+        if path.suffix in (".css", ".js"):
+            digest.update(path.name.encode("utf-8"))
+            digest.update(path.read_bytes())
+    return digest.hexdigest()[:10]
 
 
 def _serve_html(filename: str) -> HTMLResponse:
@@ -69,6 +113,7 @@ def _serve_html(filename: str) -> HTMLResponse:
     Files here are small (a few KB), so reading on every request is cheap.
     """
     content = (STATIC_DIR / filename).read_text(encoding="utf-8")
+    content = _ASSET_URL_RE.sub(lambda m: f"{m.group(0)}?v={_asset_version()}", content)
     return HTMLResponse(
         content,
         headers={
@@ -80,53 +125,88 @@ def _serve_html(filename: str) -> HTMLResponse:
 
 
 # ---------------------------------------------------------------------------
-# admin session (hardcoded credentials — unchanged from before)
+# sessions — signed cookies instead of a server-side session table
+#
+# A token is "<base64 json [kind, username, issued_at]>.<hmac>", signed with
+# SESSION_SECRET. Nothing is kept in memory, so a restart (which on Render's
+# free tier happens every time the service wakes from sleep) doesn't log
+# anyone out. The trade-off: logout only deletes the cookie; it can't revoke
+# a copied token before it expires. Admin tokens are also keyed on the admin
+# password, so changing ADMIN_PASSWORD logs every admin out.
+#
+# Without SESSION_SECRET a random one is made per process — fine locally,
+# but then every restart logs everyone out.
 # ---------------------------------------------------------------------------
-ADMIN_USER = "admin"
-ADMIN_PASS = "ilovebracmf"
+SESSION_SECRET = os.environ.get("SESSION_SECRET", "").strip() or secrets.token_urlsafe(32)
+
+ADMIN_USER = os.environ.get("ADMIN_USERNAME", "").strip() or "admin"
+ADMIN_PASS = os.environ.get("ADMIN_PASSWORD", "")
+if not ADMIN_PASS:
+    print("[admin] ADMIN_PASSWORD is not set - the admin panel is locked until you set it")
+
 ADMIN_COOKIE = "brac_admin_session"
-_admin_sessions: dict = {}
 ADMIN_SESSION_TTL = 60 * 60 * 8  # 8 hours
+USER_COOKIE = "brac_user_session"
+USER_SESSION_TTL = 60 * 60 * 24 * 30  # 30 days — end users shouldn't re-login often
+
+# When set, new accounts need this code — share it only with people who
+# should be able to use the assistant (and your Gemini quota).
+REGISTRATION_CODE = os.environ.get("REGISTRATION_CODE", "").strip()
+
+
+def _signing_key(kind: str) -> bytes:
+    extra = ADMIN_PASS if kind == "admin" else ""
+    return hashlib.sha256(f"{SESSION_SECRET}|{kind}|{extra}".encode("utf-8")).digest()
+
+
+def _make_token(kind: str, username: str) -> str:
+    body = json.dumps([kind, username, int(time.time())], separators=(",", ":"))
+    payload = base64.urlsafe_b64encode(body.encode("utf-8")).decode("ascii").rstrip("=")
+    sig = hmac.new(_signing_key(kind), payload.encode("ascii"), hashlib.sha256).hexdigest()
+    return f"{payload}.{sig}"
+
+
+def _read_token(token, kind: str, ttl: int):
+    """Return the username in a valid, unexpired token of this kind, else None."""
+    if not token or "." not in token:
+        return None
+    payload, sig = token.rsplit(".", 1)
+    expected = hmac.new(_signing_key(kind), payload.encode("ascii", "ignore"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        return None
+    try:
+        padded = payload + "=" * (-len(payload) % 4)
+        token_kind, username, issued_at = json.loads(base64.urlsafe_b64decode(padded))
+    except (ValueError, TypeError):
+        return None
+    if token_kind != kind or time.time() - issued_at > ttl:
+        return None
+    return username
+
+
+def _set_session_cookie(resp, request: Request, name: str, token: str, max_age: int) -> None:
+    resp.set_cookie(
+        name, token,
+        max_age=max_age, httponly=True, samesite="lax", path="/",
+        secure=request.url.scheme == "https",
+    )
 
 
 def _issue_admin_session() -> str:
-    token = secrets.token_urlsafe(32)
-    _admin_sessions[token] = time.time()
-    return token
+    return _make_token("admin", ADMIN_USER)
 
 
 def _admin_session_valid(token) -> bool:
-    if not token or token not in _admin_sessions:
-        return False
-    if time.time() - _admin_sessions[token] > ADMIN_SESSION_TTL:
-        del _admin_sessions[token]
-        return False
-    return True
-
-
-# ---------------------------------------------------------------------------
-# end-user session (JSON-backed accounts via users_store)
-# ---------------------------------------------------------------------------
-USER_COOKIE = "brac_user_session"
-_user_sessions: dict = {}  # token -> {"username": str, "issued_at": float}
-USER_SESSION_TTL = 60 * 60 * 24 * 30  # 30 days — end users shouldn't re-login often
+    return bool(ADMIN_PASS) and _read_token(token, "admin", ADMIN_SESSION_TTL) is not None
 
 
 def _issue_user_session(username: str) -> str:
-    token = secrets.token_urlsafe(32)
-    _user_sessions[token] = {"username": username, "issued_at": time.time()}
-    return token
+    return _make_token("user", username)
 
 
 def _user_session_username(token):
     """Return the logged-in username for a session token, or None."""
-    record = _user_sessions.get(token)
-    if not record:
-        return None
-    if time.time() - record["issued_at"] > USER_SESSION_TTL:
-        del _user_sessions[token]
-        return None
-    return record["username"]
+    return _read_token(token, "user", USER_SESSION_TTL)
 
 
 BASE_SYSTEM_INSTRUCTION = (
@@ -156,7 +236,17 @@ BASE_SYSTEM_INSTRUCTION = (
 )
 
 # --- knowledge base --------------------------------------------------------
-_embed_client = genai.Client(api_key=read_api_key()) if read_api_key() else None
+def _make_embed_client(api_key: str) -> genai.Client:
+    """Client for embedding calls, with a timeout (milliseconds).
+
+    Without one, a stalled connection would hang startup — and a host's
+    health check with it — or a search, forever. When a call fails, rag.py
+    falls back to keyword-only search.
+    """
+    return genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=30_000))
+
+
+_embed_client = _make_embed_client(read_api_key()) if read_api_key() else None
 
 print("[rag] indexing knowledge/ ...")
 kb = KnowledgeBase(KNOWLEDGE_DIR, client=_embed_client)
@@ -248,23 +338,31 @@ async def register_page(request: Request):
     return _serve_html("register.html")
 
 
+@app.get("/api/auth/config")
+async def auth_config():
+    """What the register page needs to know before showing its form."""
+    return JSONResponse({"registration_code_required": bool(REGISTRATION_CODE)})
+
+
 @app.post("/api/auth/register")
 async def auth_register(request: Request):
     body = await request.json()
     username = str(body.get("username", "")).strip()
     password = str(body.get("password", ""))
+    code = str(body.get("code", "")).strip()
+
+    if REGISTRATION_CODE and not hmac.compare_digest(code.encode("utf-8"), REGISTRATION_CODE.encode("utf-8")):
+        return JSONResponse({"error": "আমন্ত্রণ কোড সঠিক নয়"}, status_code=403)
 
     try:
-        users_store.create_user(username, password)
+        # PBKDF2 hashing is deliberately slow — keep it off the event loop
+        # so it can't stall audio streaming for people mid-conversation.
+        await asyncio.to_thread(users_store.create_user, username, password)
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
-    token = _issue_user_session(username)
     resp = JSONResponse({"success": True})
-    resp.set_cookie(
-        USER_COOKIE, token,
-        max_age=USER_SESSION_TTL, httponly=True, samesite="lax", path="/",
-    )
+    _set_session_cookie(resp, request, USER_COOKIE, _issue_user_session(username), USER_SESSION_TTL)
     return resp
 
 
@@ -274,38 +372,32 @@ async def auth_login(request: Request):
     username = str(body.get("username", "")).strip()
     password = str(body.get("password", ""))
 
-    if not users_store.verify_user(username, password):
+    if not await asyncio.to_thread(users_store.verify_user, username, password):
         return JSONResponse({"error": "ভুল ইউজারনেম অথবা পাসওয়ার্ড"}, status_code=401)
 
-    token = _issue_user_session(username)
     resp = JSONResponse({"success": True})
-    resp.set_cookie(
-        USER_COOKIE, token,
-        max_age=USER_SESSION_TTL, httponly=True, samesite="lax", path="/",
-    )
+    _set_session_cookie(resp, request, USER_COOKIE, _issue_user_session(username), USER_SESSION_TTL)
     return resp
 
 
 @app.post("/api/auth/logout")
-async def auth_logout(request: Request):
-    token = request.cookies.get(USER_COOKIE)
-    if token in _user_sessions:
-        del _user_sessions[token]
+async def auth_logout():
     resp = JSONResponse({"success": True})
     resp.delete_cookie(USER_COOKIE, path="/")
     return resp
 
 
+@app.get("/healthz")
+async def healthz():
+    """Health check for the host (Render pings this to know the app is up)."""
+    return JSONResponse({"ok": True})
+
+
 @app.get("/api/knowledge")
-async def knowledge_info():
-    return JSONResponse(kb.info())
-
-
-@app.post("/api/knowledge/reload")
-async def knowledge_reload():
-    """Re-index knowledge/ after you edit or add a file, without restarting."""
-    kb.load()
-    print(f"[rag] reloaded: {kb.status}")
+async def knowledge_info(request: Request):
+    # File names can be sensitive, so only signed-in users and admins see them.
+    if not (_user_session_username(request.cookies.get(USER_COOKIE)) or _require_admin(request)):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
     return JSONResponse(kb.info())
 
 
@@ -335,24 +427,26 @@ async def admin_login(request: Request):
     username = str(body.get("username", ""))
     password = str(body.get("password", ""))
 
-    ok = hmac.compare_digest(username, ADMIN_USER) and hmac.compare_digest(password, ADMIN_PASS)
+    if not ADMIN_PASS:
+        return JSONResponse(
+            {"error": "ADMIN_PASSWORD সেট করা নেই — সার্ভারের environment-এ যোগ করুন"},
+            status_code=503,
+        )
+
+    ok = (
+        hmac.compare_digest(username.encode("utf-8"), ADMIN_USER.encode("utf-8"))
+        and hmac.compare_digest(password.encode("utf-8"), ADMIN_PASS.encode("utf-8"))
+    )
     if not ok:
         return JSONResponse({"error": "ভুল ইউজারনেম অথবা পাসওয়ার্ড"}, status_code=401)
 
-    token = _issue_admin_session()
     resp = JSONResponse({"success": True})
-    resp.set_cookie(
-        ADMIN_COOKIE, token,
-        max_age=ADMIN_SESSION_TTL, httponly=True, samesite="lax", path="/",
-    )
+    _set_session_cookie(resp, request, ADMIN_COOKIE, _issue_admin_session(), ADMIN_SESSION_TTL)
     return resp
 
 
 @app.post("/api/admin/logout")
-async def admin_logout(request: Request):
-    token = request.cookies.get(ADMIN_COOKIE)
-    if token in _admin_sessions:
-        del _admin_sessions[token]
+async def admin_logout():
     resp = JSONResponse({"success": True})
     resp.delete_cookie(ADMIN_COOKIE, path="/")
     return resp
@@ -369,6 +463,7 @@ async def admin_get_settings(request: Request):
     s = load_settings()
     s["_valid_voices"] = VALID_VOICES
     s["_api_key_masked"] = masked_api_key()
+    s["_api_key_managed"] = api_key_managed_by_host()
     s["_knowledge"] = kb.info()
     return JSONResponse(s)
 
@@ -398,9 +493,9 @@ async def admin_set_api_key(request: Request):
         return JSONResponse({"error": str(e)}, status_code=400)
 
     global _embed_client
-    _embed_client = genai.Client(api_key=new_key)
+    _embed_client = _make_embed_client(new_key)
     kb.client = _embed_client
-    kb.load()
+    await asyncio.to_thread(kb.load)
 
     return JSONResponse({
         "success": True,
@@ -413,7 +508,7 @@ async def admin_set_api_key(request: Request):
 async def admin_reload_knowledge(request: Request):
     if not _require_admin(request):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
-    kb.load()
+    await asyncio.to_thread(kb.load)
     return JSONResponse(kb.info())
 
 
@@ -437,10 +532,93 @@ async def admin_delete_knowledge_file(filename: str, request: Request):
         target.unlink()
     except OSError as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+    storage.remove(target)
 
-    kb.load()
+    await asyncio.to_thread(kb.load)
     print(f"[admin] deleted {safe_name}; {kb.status}")
     return JSONResponse(kb.info())
+
+
+# ---------------------------------------------------------------------------
+# document upload — admin only. Used to be a separate app on port 6501;
+# it lives here now because a host gives each app a single public port.
+# ---------------------------------------------------------------------------
+@app.get("/upload")
+async def upload_page(request: Request):
+    if _require_admin(request):
+        return _serve_html("upload.html")
+    return _serve_html("admin_login.html")
+
+
+@app.post("/api/admin/upload")
+async def admin_upload(request: Request, file: UploadFile = File(...)):
+    """Turn an uploaded document into markdown in knowledge/, then re-index."""
+    if not _require_admin(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+    api_key = read_upload_api_key()
+    if not api_key:
+        return JSONResponse({"error": "GEMINI_API_KEY not set"}, status_code=500)
+
+    processor = DocumentProcessor(api_key=api_key)
+    original_name = file.filename or "document"
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(original_name).suffix) as tmp:
+        tmp.write(await file.read())
+        tmp_path = Path(tmp.name)
+
+    try:
+        markdown, suggested_name = await processor.process_upload(tmp_path, original_name)
+        output_path = KNOWLEDGE_DIR / suggested_name
+        output_path.write_text(markdown, encoding="utf-8")
+        storage.save(output_path)
+        print(f"[upload] {original_name} → {suggested_name} ({len(markdown)} chars)")
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:
+        print(f"[upload error] {original_name}: {e}")
+        return JSONResponse({"error": f"Processing failed: {e}"}, status_code=500)
+    finally:
+        try:
+            tmp_path.unlink()
+        except OSError:
+            pass
+
+    await asyncio.to_thread(kb.load)
+    return JSONResponse({
+        "success": True,
+        "filename": suggested_name,
+        "size": len(markdown),
+        "knowledge": kb.info(),
+    })
+
+
+@app.get("/api/admin/upload-key")
+async def admin_get_upload_key(request: Request):
+    """Masked view of the key document processing uses — never the full key."""
+    if not _require_admin(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    return JSONResponse({
+        "masked": masked_upload_api_key(),
+        "dedicated": upload_key_is_dedicated(),
+        "managed": upload_api_key_managed_by_host(),
+    })
+
+
+@app.post("/api/admin/upload-key")
+async def admin_set_upload_key(request: Request):
+    """Set a document-processing key separate from the voice assistant's."""
+    if not _require_admin(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    body = await request.json()
+    new_key = str(body.get("api_key", "")).strip()
+    if not new_key:
+        return JSONResponse({"error": "চাবি ফাঁকা রাখা যাবে না"}, status_code=400)
+    try:
+        write_upload_api_key(new_key)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return JSONResponse({"success": True, "masked": masked_upload_api_key(), "dedicated": True})
 
 
 # ---------------------------------------------------------------------------
@@ -636,4 +814,15 @@ async def audio_bridge(ws: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server:app", host="0.0.0.0", port=6001, reload=False)
+    # Behind a host's HTTPS proxy, trust its X-Forwarded-* headers so the
+    # app sees https:// requests as https (needed for Secure cookies).
+    # Passing the app object (not "server:app") avoids importing this module
+    # a second time, which would redo the database restore and indexing.
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", "6001")),
+        reload=False,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+    )

@@ -45,7 +45,13 @@
 
 * { box-sizing: border-box; }
 
-html, body { height: 100%; margin: 0; overflow-x: hidden; }
+/* overscroll-behavior: stops pull-to-refresh on phones, which would reload
+   the page and end a conversation mid-sentence. */
+html, body { height: 100%; margin: 0; overflow-x: hidden; overscroll-behavior: none; }
+
+/* Touch: no grey flash on tap, and no double-tap-to-zoom delay on buttons. */
+a, button, input, label { -webkit-tap-highlight-color: transparent; }
+button { touch-action: manipulation; }
 
 body {
   background:
@@ -126,29 +132,7 @@ body {
   color: var(--muted);
   padding: 0.2rem;
 }
-.theme-toggle .icon-sun, .theme-toggle .icon-moon {
-  width: 15px; height: 15px;
-  display: inline-block;
-  position: relative;
-}
-.icon-sun::before {
-  content: "";
-  position: absolute; inset: 3px;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow:
-    0 -7px 0 -5px currentColor, 0 7px 0 -5px currentColor,
-    -7px 0 0 -5px currentColor, 7px 0 0 -5px currentColor,
-    -5px -5px 0 -5px currentColor, 5px 5px 0 -5px currentColor,
-    -5px 5px 0 -5px currentColor, 5px -5px 0 -5px currentColor;
-}
-.icon-moon::before {
-  content: "";
-  position: absolute; inset: 1px;
-  border-radius: 50%;
-  box-shadow: 4px -1px 0 0 currentColor;
-  background: transparent;
-}
+.theme-icon { flex: none; display: block; }
 .theme-track {
   width: 2.3rem; height: 1.15rem;
   border-radius: 999px;
@@ -178,8 +162,17 @@ body {
   color: var(--muted);
   text-decoration: none;
   transition: color 0.18s, background 0.18s;
+  /* the logout control is a <button> — strip the browser's default chrome
+     so it matches the settings link next to it */
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  flex: none;
 }
 .settings-btn:hover { color: var(--ink); background: rgba(230, 0, 126, 0.1); }
+.settings-btn:focus-visible, .theme-toggle:focus-visible { outline: 2px solid var(--magenta-lit); outline-offset: 2px; }
 
 .clear, .panel-close {
   background: none;
@@ -428,69 +421,106 @@ body {
 /* ---------------- responsive: mobile layout ---------------- */
 @media (max-width: 860px) {
   body {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
     grid-template-areas: "head" "peek" "stage";
     overflow: hidden;
     height: 100dvh;
+    /* viewport-fit=cover lets the page run under a notch or rounded
+       corners — keep the content clear of them (matters in landscape). */
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
   }
 
-  .masthead { padding: 0.9rem 1.1rem; }
-  .mark-text { font-size: 0.95rem; }
+  .masthead {
+    padding: max(0.6rem, env(safe-area-inset-top, 0px)) 0.7rem 0.6rem 1.1rem;
+    gap: 0.5rem;
+  }
+  .mark { min-width: 0; }
+  .mark-text { font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .head-controls { gap: 0.15rem; flex: none; }
   .kb-strip { display: none; } /* redundant with settings page on small screens */
 
+  /* Finger-sized targets (~42px) for the header controls. */
+  .theme-toggle { padding: 0.75rem 0.4rem; }
+  .settings-btn { width: 2.6rem; height: 2.6rem; }
+
+  /* The orb takes whatever height is left over, which puts the talk
+     button and the text box at the bottom of the screen, in thumb reach.
+     If the screen is too short for everything (landscape, or the keyboard
+     is open), the stage scrolls instead of clipping. */
   .stage {
-    padding: 0.5rem 1.2rem 1rem;
-    gap: 1rem;
+    justify-content: flex-start;
+    padding: 0.4rem 1.1rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
+    gap: 0.8rem;
     overflow-y: auto;
   }
+  .orb-wrap { flex: 1 0 auto; justify-content: center; }
 
-  #orb { width: min(58vw, 17rem); height: min(58vw, 17rem); }
+  #orb { width: min(74vw, 21rem, 34dvh); height: min(74vw, 21rem, 34dvh); }
+  .state-line { text-align: center; }
 
   /* Peek bar: shows the latest turn right below the header, tap to open
-     the full conversation. It's part of the normal grid flow now (not a
+     the full conversation. It's part of the normal grid flow (not a
      floating fixed overlay), so it always sits directly under the header
      regardless of header height. */
   .feed-peek {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 0.15rem;
+    align-items: stretch;
+    gap: 0.2rem;
     grid-area: peek;
     position: relative;
     min-width: 0;   /* without this, a long reply's unwrapped text forces
                        this box (and the grid column, and the page) wider
-                       than the screen — nowrap+ellipsis below can't help
-                       until the box itself is allowed to shrink first */
-    width: 100%;
-    margin: 0.6rem 0.8rem 0;
+                       than the screen */
+    margin: 0.6rem 0.8rem 0;   /* no width:100% here — with side margins
+                                  that pushed the bar off the right edge */
     z-index: 20;
+    font: inherit;  /* a <button> doesn't inherit the page font by default */
+    color: inherit;
+    cursor: pointer;
     background: linear-gradient(180deg, var(--panel-bg-1), var(--panel-bg-2));
     border: 1px solid var(--edge);
     border-radius: 1rem;
-    padding: 0.6rem 0.9rem 0.7rem;
+    padding: 0.55rem 0.9rem 0.7rem;
     text-align: left;
     backdrop-filter: blur(8px);
     box-shadow: 0 6px 20px rgba(0,0,0,0.18);
   }
-  .feed-peek-who {
+  .feed-peek:active { border-color: var(--magenta); }
+  .feed-peek-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
     min-width: 0;
-    max-width: 100%;
-    font-size: 0.7rem;
+  }
+  .feed-peek-who {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.74rem;
     font-weight: 600;
     color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* "see all" + chevron: makes it obvious the bar opens the conversation */
+  .feed-peek-open {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: var(--magenta-lit);
+  }
+  [data-theme="light"] .feed-peek-open { color: var(--magenta); }
   .feed-peek-text {
     display: block;
-    min-width: 0;   /* see note on .feed-peek above — same fix, same reason */
-    max-width: 100%;
-    width: 100%;
-    font-size: 0.88rem;
+    min-width: 0;
+    font-size: 0.9rem;
     line-height: 1.35;
     color: var(--ink);
     overflow: hidden;
@@ -498,12 +528,6 @@ body {
     white-space: normal;
     overflow-wrap: break-word;
     word-break: break-word;
-  }
-  .feed-peek-chevron {
-    position: absolute;
-    top: 0.55rem; right: 0.8rem;
-    color: var(--muted);
-    font-size: 0.9rem;
   }
 
   /* Panel becomes a full-height sheet that drops down from the top,
@@ -515,15 +539,28 @@ body {
     border-left: 0;
     border-radius: 0;
     transform: translateY(-100%);
-    transition: transform 0.28s ease;
+    visibility: hidden;   /* keeps the off-screen sheet out of the tab order
+                             and away from screen readers until opened */
+    transition: transform 0.28s ease, visibility 0s linear 0.28s;
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
     padding-bottom: env(safe-area-inset-bottom, 0px);
+    /* Opaque here: as a full-screen sheet, the desktop panel's see-through
+       background let the orb and buttons show through the text. */
+    background: linear-gradient(180deg, var(--panel-bg-1), var(--panel-bg-2)), var(--base);
+    backdrop-filter: none;
   }
-  .panel.open { transform: translateY(0); }
+  .panel.open {
+    transform: translateY(0);
+    visibility: visible;
+    transition: transform 0.28s ease, visibility 0s;
+  }
 
-  .panel-head { padding: max(1rem, env(safe-area-inset-top, 0px)) 1.1rem 0.8rem; }
-  .panel-close { display: flex; }
+  .panel-head { padding: max(0.8rem, env(safe-area-inset-top, 0px)) 0.8rem 0.6rem 1.1rem; font-size: 1rem; }
+  .clear { padding: 0.5rem 1rem; font-size: 0.85rem; }
+  .panel-close { display: flex; width: 2.6rem; height: 2.6rem; font-size: 1rem; }
 
-  .log { padding: 0.4rem 1.1rem 1.4rem; }
+  .log { padding: 0.4rem 1.1rem 1.4rem; overscroll-behavior: contain; }
 
   .panel-scrim {
     display: block;
@@ -537,8 +574,36 @@ body {
   }
   .panel-scrim.open { opacity: 1; pointer-events: auto; }
 
-  .talk-face { padding: 0.85rem 1.7rem; font-size: 1rem; }
-  .guard { font-size: 0.8rem; text-align: center; }
+  .talk { -webkit-user-select: none; user-select: none; }
+  .talk-face { padding: 1rem 2.4rem; font-size: 1.08rem; }
+  .guard { font-size: 0.82rem; text-align: center; padding: 0.3rem 0; }
+
+  /* 16px keeps iOS Safari from zooming the whole page when the box is focused. */
+  .text-row { max-width: 30rem; }
+  .text-input { font-size: 16px; padding: 0.75rem 1.1rem; }
+  .text-send { width: 3rem; height: 3rem; }
+}
+
+/* Short screens (small phones, or any phone once the browser's toolbars
+   take their share): shrink the orb and the peek bar so the talk button
+   and the text box still fit without scrolling. */
+@media (max-width: 860px) and (max-height: 640px) {
+  .masthead { padding-top: max(0.35rem, env(safe-area-inset-top, 0px)); padding-bottom: 0.35rem; }
+  .feed-peek { margin-top: 0.45rem; padding: 0.45rem 0.8rem 0.55rem; }
+  .feed-peek-text { max-height: 4.05em; }   /* ~3 lines */
+  .stage { gap: 0.5rem; padding-top: 0.2rem; }
+  #orb { width: min(60vw, 26dvh); height: min(60vw, 26dvh); }
+  .state-line { font-size: 0.9rem; margin-top: 0; }
+  .talk-face { padding: 0.85rem 2.1rem; }
+  .guard { padding: 0.1rem 0; }
+}
+
+/* Hover lift only where there's a real pointer — on touch screens :hover
+   sticks after a tap and leaves the button looking pressed. */
+@media (hover: none) {
+  .talk:hover .talk-face { transform: none; box-shadow: 0 14px 40px rgba(230, 0, 126, 0.28), 0 0 0 1px var(--edge); }
+  .text-send:hover { transform: none; box-shadow: 0 0 0 1px var(--edge); }
+  .settings-btn:hover { color: var(--muted); background: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -26,13 +26,7 @@ const els = {
   themeToggle: document.getElementById('themeToggle'),
   langBn: document.getElementById('langBn'),
   langEn: document.getElementById('langEn'),
-  uploadLink: document.getElementById('uploadLink'),
 };
-
-/* Document upload runs as a separate process on its own port (6501) —
-   point at whatever host this admin panel is being viewed from, not a
-   hardcoded 'localhost', so this still works once deployed. */
-els.uploadLink.href = `${location.protocol}//${location.hostname}:6501`;
 
 /* ------------------------------------------------------------------ *
  * theme — shared 'brac-theme' key with the main voice assistant page
@@ -104,6 +98,8 @@ const I18N = {
     confirmDeletePrefix: 'আপনি কি নিশ্চিতভাবে মুছে ফেলতে চান: ',
     confirmDeleteSuffix: ' ? এটি পূর্বাবস্থায় ফেরানো যাবে না।',
     fileDeletedOk: 'ফাইল মুছে ফেলা হয়েছে এবং জ্ঞান ভাণ্ডার হালনাগাদ হয়েছে',
+    keyManagedSuffix: ' — হোস্টিং ড্যাশবোর্ডে সেট করা (যেমন Render → Environment); পরিবর্তন সেখান থেকেই করুন',
+    keyManagedPlaceholder: 'হোস্টিং ড্যাশবোর্ড থেকে পরিবর্তন করুন',
   },
   en: {
     panelTitle: 'Admin panel',
@@ -156,6 +152,8 @@ const I18N = {
     confirmDeletePrefix: 'Are you sure you want to delete: ',
     confirmDeleteSuffix: '? This cannot be undone.',
     fileDeletedOk: 'File deleted and the knowledge base was updated',
+    keyManagedSuffix: ' — set in the hosting dashboard (e.g. Render → Environment); change it there',
+    keyManagedPlaceholder: 'Change it in the hosting dashboard',
   },
 };
 
@@ -188,12 +186,17 @@ applyStaticI18n();
 
 let lastKbInfo = null;
 let lastMaskedKey = '';
+let keyManaged = false;
 
 function refreshDynamicText() {
   if (lastKbInfo) renderKb(lastKbInfo);
-  els.currentKeyHint.textContent = lastMaskedKey
-    ? `${t('currentKeyPrefix')}${lastMaskedKey}`
-    : `${t('currentKeyPrefix')}${t('noKeySet')}`;
+  els.currentKeyHint.textContent =
+    `${t('currentKeyPrefix')}${lastMaskedKey || t('noKeySet')}${keyManaged ? t('keyManagedSuffix') : ''}`;
+  // A key set by the host would come back on the next restart, so don't
+  // offer a form that looks like it changes it.
+  els.apiKeyInput.disabled = keyManaged;
+  els.saveKeyBtn.disabled = keyManaged;
+  els.apiKeyInput.placeholder = keyManaged ? t('keyManagedPlaceholder') : 'AIza...';
 }
 
 /* ------------------------------------------------------------------ *
@@ -282,6 +285,7 @@ async function loadSettings() {
     els.fontSize.value = s.font_size;
 
     lastMaskedKey = s._api_key_masked || '';
+    keyManaged = !!s._api_key_managed;
     renderKb(s._knowledge);
     refreshDynamicText();
   } catch (err) {
@@ -350,7 +354,7 @@ async function saveApiKey() {
   } catch (err) {
     showBanner(err.message, 'error');
   } finally {
-    els.saveKeyBtn.disabled = false;
+    els.saveKeyBtn.disabled = keyManaged;
     els.saveKeyBtn.textContent = t('saveBtn');
   }
 }

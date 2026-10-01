@@ -15,6 +15,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict
 
+import storage
+
 BASE_DIR = Path(__file__).resolve().parent
 SETTINGS_PATH = BASE_DIR / "settings.json"
 ENV_PATH = BASE_DIR / ".env"
@@ -53,6 +55,7 @@ def save_settings(patch: Dict[str, Any]) -> Dict[str, Any]:
     current.update(patch)
     current = _validate(current)
     SETTINGS_PATH.write_text(json.dumps(current, indent=2), encoding="utf-8")
+    storage.save(SETTINGS_PATH)
     return current
 
 
@@ -97,16 +100,36 @@ def _validate(data: Dict[str, Any]) -> Dict[str, Any]:
 # two apps on separate keys (separate quota, separate billing project,
 # separate usage tracking) without disturbing the single-key setup most
 # people start with.
+#
+# On a host like Render the keys are set in the host's dashboard instead,
+# and there's no .env file (the disk is wiped on every restart anyway).
+# Such a key is "managed by the host": the admin panel shows it but can't
+# replace it, since a replacement would silently revert on the next restart.
 # ---------------------------------------------------------------------------
-def _read_env_var(var_name: str) -> str:
-    """Environment wins, then .env file, for the given variable name."""
-    if os.environ.get(var_name):
-        return os.environ[var_name]
+def _read_env_file_var(var_name: str) -> str:
     if ENV_PATH.exists():
         for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
             if line.startswith(f"{var_name}="):
                 return line.split("=", 1)[1].strip().strip('"').strip("'")
     return ""
+
+
+def _read_env_var(var_name: str) -> str:
+    """Environment wins, then .env file, for the given variable name."""
+    if os.environ.get(var_name):
+        return os.environ[var_name]
+    return _read_env_file_var(var_name)
+
+
+def _managed_by_host(var_name: str) -> bool:
+    """True if the value comes from the host's environment, not from .env.
+
+    load_dotenv copies .env values into os.environ, so a value that's in
+    the environment but not in .env (or differs from it — load_dotenv never
+    overrides a real environment variable) was set by the host.
+    """
+    value = os.environ.get(var_name, "")
+    return bool(value) and value != _read_env_file_var(var_name)
 
 
 def _write_env_var(var_name: str, new_value: str) -> None:
@@ -122,6 +145,10 @@ def _write_env_var(var_name: str, new_value: str) -> None:
     new_value = new_value.strip()
     if not new_value:
         raise ValueError("Value cannot be empty")
+    if _managed_by_host(var_name):
+        raise ValueError(
+            f"{var_name} is set in the hosting dashboard (e.g. Render → Environment) — change it there"
+        )
 
     lines = []
     replaced = False
@@ -161,6 +188,10 @@ def masked_api_key() -> str:
     return _mask(read_api_key())
 
 
+def api_key_managed_by_host() -> bool:
+    return _managed_by_host("GEMINI_API_KEY")
+
+
 def read_upload_api_key() -> str:
     """
     The document-processing key. Checks UPLOAD_GEMINI_API_KEY first; if that
@@ -175,6 +206,11 @@ def write_upload_api_key(new_key: str) -> None:
     """Set a document-processing key independent of the shared GEMINI_API_KEY."""
     if not new_key.strip():
         raise ValueError("Upload API key cannot be empty")
+    if upload_api_key_managed_by_host():
+        raise ValueError(
+            "The document-processing key is set in the hosting dashboard "
+            "(e.g. Render → Environment) — change it there"
+        )
     _write_env_var("UPLOAD_GEMINI_API_KEY", new_key)
 
 
@@ -187,3 +223,12 @@ def upload_key_is_dedicated() -> bool:
 def masked_upload_api_key() -> str:
     """Display-safe version of whichever key document processing is actually using."""
     return _mask(read_upload_api_key())
+
+
+def upload_api_key_managed_by_host() -> bool:
+    """True if document processing's key can't be changed from the app —
+    either its own key or, when there isn't one, the shared key it falls
+    back to comes from the host's environment."""
+    if _read_env_var("UPLOAD_GEMINI_API_KEY"):
+        return _managed_by_host("UPLOAD_GEMINI_API_KEY")
+    return _managed_by_host("GEMINI_API_KEY")
